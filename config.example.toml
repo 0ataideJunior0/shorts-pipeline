@@ -1,0 +1,37 @@
+# Copy to config.toml and edit. config.toml is git-ignored.
+projects_dir = "projects"
+assets_dir   = "/home/jancera/media/shorts-assets"
+aspect       = "9:16"
+
+[transcribe]
+model = "whisper-1"
+
+[ideate]
+model = "gpt-4.1"
+count = 6
+
+[voice]
+model = "gpt-4o-mini-tts"
+voice = "alloy"   # alloy ash ballad coral echo fable onyx nova sage shimmer verse
+# instructions = "Narre em pt-BR num tom calmo e confiante, com ritmo pausado."
+#   free-text tone/style/pacing steering; only honored by gpt-4o-mini-tts
+# speed = 1.0     # 0.25-4.0; native on tts-1/tts-1-hd, prefer `instructions` for gpt-4o-mini-tts
+
+[render]
+min_beat_duration = 3.0
+
+[render.subtitle]
+# Burned-in captions from the transcript (ai-vedit plan --subtitles + styling).
+enabled = true
+# Every styling key below is optional; omit one to keep ai-vedit's own default.
+# font = "Montserrat"
+# font_size = 18
+# primary_color = "#FFFFFF"      # hex #RRGGBB
+# bold = true
+# italic = false
+# uppercase = false
+# position = "bottom"            # bottom | middle | top
+# margin_vertical = 40
+# max_chars_per_line = 32
+# max_lines = 2
+# max_duration = 4.0            # seconds per caption cue
