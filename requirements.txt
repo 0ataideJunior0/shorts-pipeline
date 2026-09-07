@@ -2,4 +2,5 @@ openai>=1.40
 yt-dlp>=2024.8.6
 click>=8.1
 python-dotenv>=1.0
+flask>=3.0
 pytest>=8

@@ -146,5 +146,25 @@ def status(ctx: click.Context, name: str | None) -> None:
             )
 
 
+@cli.command()
+@click.option("--host", default="127.0.0.1", help="Bind address (localhost only; do not expose).")
+@click.option("--port", default=8765, type=int)
+@click.option("--open/--no-open", "open_browser", default=True, help="Open a browser tab.")
+@click.pass_context
+def serve(ctx: click.Context, host: str, port: int, open_browser: bool) -> None:
+    """Run the local web UI (localhost only - do not expose)."""
+    config = _config(ctx)
+    from shorts.web.app import create_app
+
+    app = create_app(config)
+    url = f"http://{host}:{port}"
+    click.echo(f"shorts web UI: {url}  (localhost only - do not expose)")
+    if open_browser:
+        import webbrowser
+
+        webbrowser.open(url)
+    app.run(host=host, port=port, threaded=True, debug=False)
+
+
 def main() -> None:
     cli()
