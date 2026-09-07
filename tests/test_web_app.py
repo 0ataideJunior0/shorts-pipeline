@@ -318,3 +318,75 @@ def test_stream_returns_buffered_event(fake_client):
 def test_cancel_idle_409(fake_client):
     c, _ = fake_client
     assert c.post("/api/jobs/current/cancel").status_code == 409
+
+
+def test_youtube_status_not_configured(client):
+    c, _, _ = client
+    body = c.get("/api/youtube/status").get_json()
+    assert body == {"connected": False, "channel": None, "error": "not configured"}
+
+
+def test_youtube_status_connected(client, monkeypatch):
+    c, cfg, _ = client
+    (cfg.youtube.token_path).write_text("{}")  # file exists → not "not configured"
+    import shorts.youtube as yt
+    monkeypatch.setattr(yt, "get_credentials", lambda c: object())
+    monkeypatch.setattr(yt, "channel_title", lambda c: "My Channel")
+    body = c.get("/api/youtube/status").get_json()
+    assert body == {"connected": True, "channel": "My Channel", "error": None}
+
+
+def test_youtube_status_expired(client, monkeypatch):
+    c, cfg, _ = client
+    (cfg.youtube.token_path).write_text("{}")
+    import shorts.youtube as yt
+    monkeypatch.setattr(yt, "get_credentials",
+        lambda c: (_ for _ in ()).throw(yt.YouTubeAuthError("x", reason="expired")))
+    assert c.get("/api/youtube/status").get_json()["error"] == "token expired"
+
+
+def test_put_cadence_and_queue(client):
+    c, _, project = client
+    r = c.put("/api/projects/demo/publish/cadence",
+              json={"start": "2026-09-14T09:00:00Z", "interval_hours": 24, "weekdays": [1, 2, 3, 4, 5]})
+    assert r.status_code == 200
+    from shorts.project import Manifest
+    assert Manifest.load(project.manifest_path).get_publish()["interval_hours"] == 24
+    assert r.get_json()["cadence"]["weekdays"] == [1, 2, 3, 4, 5]
+
+    r2 = c.put("/api/projects/demo/publish/cadence", json={"start": None})
+    assert Manifest.load(project.manifest_path).get_publish() == {}
+
+
+def test_put_cadence_bad_start_422(client):
+    c, _, _ = client
+    assert c.put("/api/projects/demo/publish/cadence",
+                 json={"start": "not-a-date"}).status_code == 422
+
+
+def test_put_publish_at(client):
+    c, _, project = client
+    r = c.put("/api/projects/demo/ideas/01-x/publish-at", json={"publish_at": "2026-10-01T12:00:00Z"})
+    assert r.status_code == 200
+    from shorts.project import Manifest
+    assert Manifest.load(project.manifest_path).get_idea("01-x")["publish_at"] == "2026-10-01T12:00:00Z"
+    c.put("/api/projects/demo/ideas/01-x/publish-at", json={"publish_at": None})
+    assert "publish_at" not in Manifest.load(project.manifest_path).get_idea("01-x")
+
+
+def test_post_publish_builds_argv(fake_client):
+    c, fake = fake_client
+    assert c.post("/api/projects/demo/publish").status_code == 202
+    stage, project, cmd = fake.started[-1]
+    assert stage == "publish" and cmd[-1] == "demo" and cmd[1:3] == ["-m", "shorts"]
+    fake.busy = False  # _FakeRunner does not auto-clear after a start
+    c.post("/api/projects/demo/ideas/01-x/publish")
+    _s, _p, cmd2 = fake.started[-1]
+    assert cmd2[-3:] == ["demo", "--slug", "01-x"]
+
+
+def test_post_youtube_auth_builds_argv(fake_client):
+    c, fake = fake_client
+    assert c.post("/api/youtube/auth").status_code == 202
+    stage, _project, cmd = fake.started[-1]
+    assert stage == "youtube-auth" and cmd[-2:] == ["youtube", "auth"]

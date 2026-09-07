@@ -13,11 +13,11 @@ from shorts.web.edits import (
     EditError, apply_idea_edit, build_prompt_json, validate_plan_text,
 )
 from shorts.markdown import set_approved
-from shorts.project import Project, slugify
+from shorts.project import Manifest, Project, slugify
 from shorts.web.jobs import (
     ALLOWED_STAGES, JobBusy, JobRunner, _HEARTBEAT_SECONDS, sse_format, stage_argv,
 )
-from shorts.web.state import build_snapshot, category_report, list_projects
+from shorts.web.state import build_snapshot, category_report, list_projects, publish_queue
 
 _STATIC = Path(__file__).parent / "static"
 
@@ -228,6 +228,122 @@ def create_app(config: Config) -> Flask:
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",
         })
+
+    @app.get("/api/youtube/status")
+    def api_youtube_status():
+        from shorts.youtube import channel_title, get_credentials, YouTubeAuthError
+
+        if not config.youtube.client_secret and not config.youtube.token_path.exists():
+            return jsonify({"connected": False, "channel": None, "error": "not configured"})
+        try:
+            creds = get_credentials(config)
+        except YouTubeAuthError as exc:
+            err = "token expired" if getattr(exc, "reason", "") == "expired" else "not connected"
+            return jsonify({"connected": False, "channel": None, "error": err})
+        try:
+            ch = channel_title(creds)
+        except Exception:
+            ch = None
+        return jsonify({"connected": True, "channel": ch, "error": None})
+
+    @app.post("/api/youtube/auth")
+    def api_youtube_auth():
+        cmd = [sys.executable, "-m", "shorts", *stage_argv("youtube-auth", "")]
+        try:
+            _runner().start("youtube-auth", "", cmd)
+        except JobBusy as exc:
+            return _json_error(409, str(exc))
+        return jsonify(_runner().state()), 202
+
+    @app.get("/api/projects/<name>/publish")
+    def api_publish_queue(name: str):
+        try:
+            project = _load_project(config, name)
+        except FileNotFoundError:
+            return _json_error(404, f"no such project: {name}")
+        return jsonify(publish_queue(project, config))
+
+    @app.put("/api/projects/<name>/publish/cadence")
+    def api_put_cadence(name: str):
+        from shorts.publish import parse_iso
+        try:
+            project = _load_project(config, name)
+        except FileNotFoundError:
+            return _json_error(404, f"no such project: {name}")
+        body = request.get_json(silent=True) or {}
+        manifest = Manifest.load(project.manifest_path)
+        start = body.get("start")
+        if not start:
+            manifest.publish = {}
+        else:
+            try:
+                parse_iso(str(start))
+            except ValueError:
+                return _json_error(422, "start must be an ISO datetime")
+            try:
+                interval = int(body.get("interval_hours") or 24)
+            except (TypeError, ValueError):
+                return _json_error(422, "interval_hours must be an integer")
+            if interval <= 0:
+                return _json_error(422, "interval_hours must be > 0")
+            weekdays = body.get("weekdays")
+            if weekdays is not None:
+                if not all(isinstance(d, int) and 1 <= d <= 7 for d in weekdays):
+                    return _json_error(422, "weekdays must be integers 1..7")
+                weekdays = list(weekdays) or None
+            manifest.set_publish(start=str(start), interval_hours=interval, weekdays=weekdays)
+        manifest.save(project.manifest_path)
+        return jsonify(publish_queue(project, config))
+
+    @app.put("/api/projects/<name>/ideas/<slug>/publish-at")
+    def api_put_publish_at(name: str, slug: str):
+        from shorts.publish import parse_iso
+        try:
+            project = _load_project(config, name)
+        except FileNotFoundError:
+            return _json_error(404, f"no such project: {name}")
+        if not project.idea_file(slug).exists():
+            return _json_error(404, f"no such idea: {slug}")
+        body = request.get_json(silent=True) or {}
+        manifest = Manifest.load(project.manifest_path)
+        pa = body.get("publish_at")
+        if pa is None:
+            entry = manifest.get_idea(slug)
+            entry.pop("publish_at", None)
+            manifest.ideas[slug] = entry
+        else:
+            try:
+                parse_iso(str(pa))
+            except ValueError:
+                return _json_error(422, "publish_at must be an ISO datetime")
+            manifest.set_idea(slug, publish_at=str(pa))
+        manifest.save(project.manifest_path)
+        return jsonify(publish_queue(project, config))
+
+    def _start_publish(name, slugs):
+        cmd = [sys.executable, "-m", "shorts",
+               *stage_argv("publish", name, slugs=slugs)]
+        try:
+            _runner().start("publish", name, cmd)
+        except JobBusy as exc:
+            return _json_error(409, str(exc))
+        return jsonify(_runner().state()), 202
+
+    @app.post("/api/projects/<name>/publish")
+    def api_publish_all(name: str):
+        try:
+            _load_project(config, name)
+        except FileNotFoundError:
+            return _json_error(404, f"no such project: {name}")
+        return _start_publish(name, None)
+
+    @app.post("/api/projects/<name>/ideas/<slug>/publish")
+    def api_publish_one(name: str, slug: str):
+        try:
+            _load_project(config, name)
+        except FileNotFoundError:
+            return _json_error(404, f"no such project: {name}")
+        return _start_publish(name, [slug])
 
     @app.post("/api/jobs/current/cancel")
     def api_cancel():
