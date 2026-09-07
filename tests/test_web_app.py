@@ -88,7 +88,7 @@ def test_index_served(client):
     c, _, _ = client
     resp = c.get("/")
     assert resp.status_code == 200
-    assert b"<" in resp.data
+    assert b"EventSource" in resp.data
 
 
 def test_put_prompt_writes_file(client):

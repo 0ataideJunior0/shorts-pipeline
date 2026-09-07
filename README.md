@@ -52,6 +52,26 @@ to an `ai-vedit plan --subtitle-*` flag and is only sent when set; changing any
 of them regenerates the affected plan on the next `plan` run. Requires
 **ai-vedit ≥ 0.2.0**.
 
+## Web UI
+
+A local browser UI over the same pipeline:
+
+```bash
+python -m shorts serve            # opens http://127.0.0.1:8765
+python -m shorts serve --no-open  # don't open a browser
+python -m shorts serve --port 9000
+```
+
+It lists projects, runs every stage with live-streamed output, and lets you
+view/edit/approve ideas, edit `ideas/prompt.json`, and edit the
+`renders/NN-slug.plan.json` shot lists. All files stay on disk exactly as the
+CLI writes them — the server is only a front end, and runs each stage by
+invoking `python -m shorts <stage>` as a subprocess.
+
+**Localhost only.** There is no authentication. Do not pass `--host 0.0.0.0` or
+otherwise expose the port: the server can start processes and serves data
+derived from your `.env`.
+
 ## Setup
 
 ```bash
@@ -80,3 +100,5 @@ python -m pytest
       ai-vedit) mocked — assert the files written and the manifest transitions.
 - [ ] End-to-end smoke test behind a `--runslow` marker: a ~20s clip through
       all five stages against the real OpenAI APIs and `ai-vedit`.
+- [ ] Browser/end-to-end test of the web UI (`shorts serve`): drive a project
+      through the stages against a stubbed job runner.

@@ -1,5 +1,206 @@
 <!doctype html>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>shorts pipeline</title>
-<h1>shorts pipeline</h1>
-<p>Web UI stub — replaced in Task 8.</p>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 14px/1.5 system-ui, sans-serif; margin: 0; padding: 1.5rem; max-width: 900px; }
+  h1 { font-size: 1.2rem; }
+  .row { display: flex; gap: .75rem; align-items: center; padding: .4rem 0; border-bottom: 1px solid #8883; }
+  .badge { font-size: .75rem; padding: .1rem .5rem; border-radius: 999px; border: 1px solid #8886; }
+  .badge.done { background: #1a7f37; color: #fff; border-color: #1a7f37; }
+  .badge.stale { background: #9a6700; color: #fff; border-color: #9a6700; }
+  .badge.blocked { opacity: .5; }
+  .badge.ready { background: #0969da; color: #fff; border-color: #0969da; }
+  .badge.fresh { background: #1a7f37; color: #fff; }
+  .badge.missing { opacity: .5; }
+  button { font: inherit; padding: .3rem .7rem; }
+  textarea { width: 100%; font: 12px/1.4 ui-monospace, monospace; }
+  pre#log { background: #111; color: #eee; padding: .75rem; height: 260px; overflow: auto; white-space: pre-wrap; }
+  .card { border: 1px solid #8884; border-radius: 6px; padding: .75rem; margin: .6rem 0; }
+  .muted { opacity: .6; }
+  .err { color: #d1242f; }
+</style>
+
+<div id="app">loading…</div>
+<h2>Log <button id="cancel" hidden>Cancel</button></h2>
+<pre id="log"></pre>
+
+<script>
+const $ = (sel, el = document) => el.querySelector(sel);
+const api = async (method, path, body) => {
+  const r = await fetch(path, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || r.statusText);
+  return data;
+};
+
+let state = null;
+let currentProject = null;
+
+function route() {
+  const hash = location.hash.slice(2); // after "#/"
+  currentProject = hash || null;
+  if (currentProject) loadProject(currentProject);
+  else loadList();
+}
+
+async function loadList() {
+  const rows = await api("GET", "/api/projects");
+  const app = $("#app");
+  app.innerHTML = `
+    <h1>shorts pipeline</h1>
+    <form id="new">
+      <input name="name" placeholder="project name" required>
+      <input name="url" placeholder="youtube url" size="40" required>
+      <button>Create</button>
+    </form>
+    <div id="projects"></div>`;
+  $("#new").onsubmit = async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    try {
+      await api("POST", "/api/projects", { name: f.name.value, url: f.url.value });
+      location.hash = "#/" + slugify(f.name.value);
+    } catch (err) { alert(err.message); }
+  };
+  $("#projects").innerHTML = rows.map((p) => `
+    <div class="row">
+      <a href="#/${p.name}"><b>${p.name}</b></a>
+      <span class="muted">${p.title || ""}</span>
+    </div>`).join("") || "<p class='muted'>no projects yet</p>";
+}
+
+function slugify(s) {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "untitled";
+}
+
+async function loadProject(name) {
+  try { state = await api("GET", `/api/projects/${name}`); }
+  catch (err) { $("#app").innerHTML = `<p class="err">${err.message}</p> <a href="#/">back</a>`; return; }
+  render();
+}
+
+function render() {
+  if (!state) return;
+  const s = state;
+  const running = s.job && s.job.running;
+  $("#cancel").hidden = !running;
+  $("#app").innerHTML = `
+    <a href="#/">← projects</a>
+    <h1>${s.name}</h1>
+    <p class="muted">${s.source.title || ""} ${s.source.url ? `· <a href="${s.source.url}">source</a>` : ""}</p>
+    <h2>Pipeline</h2>
+    ${s.stages.map(stageRow).join("")}
+    <h2>Prompt</h2>
+    <textarea id="prompt" rows="5">${escapeHtml(s.prompt)}</textarea>
+    <button id="save-prompt">Save prompt</button>
+    <span class="muted">run ideate --force to apply</span>
+    <h2>Ideas</h2>
+    ${s.ideas.map(ideaCard).join("") || "<p class='muted'>run ideate</p>"}`;
+  wire();
+}
+
+function stageRow(st) {
+  const disabled = st.status === "blocked" || (state.job && state.job.running);
+  const canForce = st.status !== "blocked";
+  return `<div class="row">
+    <b style="width:6rem">${st.stage}</b>
+    <span class="badge ${st.status}">${st.status}</span>
+    <span class="muted">${st.detail || ""}</span>
+    <span style="flex:1"></span>
+    ${canForce ? `<label class="muted"><input type="checkbox" class="force" data-stage="${st.stage}"> force</label>` : ""}
+    <button class="run" data-stage="${st.stage}" ${disabled ? "disabled" : ""}>Run</button>
+  </div>`;
+}
+
+function ideaCard(idea) {
+  return `<div class="card" data-slug="${idea.slug}">
+    <div class="row">
+      <b>${idea.title}</b>
+      <label><input type="checkbox" class="approved" ${idea.approved ? "checked" : ""}> approved</label>
+      <span class="badge ${idea.voice}">voice</span>
+      <span class="badge ${idea.plan}">plan</span>
+      <span class="badge ${idea.render}">render</span>
+    </div>
+    <textarea class="narration" rows="5">${escapeHtml(idea.narration)}</textarea>
+    <button class="save-idea">Save idea</button>
+    <details>
+      <summary>Plan JSON</summary>
+      ${idea.plan_json
+        ? `<textarea class="plan" rows="12">${escapeHtml(JSON.stringify(idea.plan_json, null, 2))}</textarea>
+           <button class="save-plan">Save plan</button>
+           <span class="plan-err err"></span>`
+        : "<p class='muted'>no plan yet — run plan</p>"}
+    </details>
+  </div>`;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+}
+
+function wire() {
+  document.querySelectorAll(".run").forEach((b) => b.onclick = async () => {
+    const stage = b.dataset.stage;
+    const force = document.querySelector(`.force[data-stage="${stage}"]`)?.checked || false;
+    try {
+      if (stage === "fetch") {
+        await api("POST", `/api/projects/${state.name}/run/fetch`, { force }).catch(() => {});
+      } else {
+        await api("POST", `/api/projects/${state.name}/run/${stage}`, { force });
+      }
+    } catch (err) { alert(err.message); }
+  });
+  $("#save-prompt").onclick = async () => {
+    state = await api("PUT", `/api/projects/${state.name}/prompt`, { prompt: $("#prompt").value });
+    render();
+  };
+  document.querySelectorAll(".card").forEach((card) => {
+    const slug = card.dataset.slug;
+    $(".save-idea", card).onclick = async () => {
+      try {
+        state = await api("PUT", `/api/projects/${state.name}/ideas/${slug}`, {
+          narration: $(".narration", card).value,
+          approved: $(".approved", card).checked,
+        });
+        render();
+      } catch (err) { alert(err.message); }
+    };
+    const sp = $(".save-plan", card);
+    if (sp) sp.onclick = async () => {
+      try {
+        state = await api("PUT", `/api/projects/${state.name}/ideas/${slug}/plan`, {
+          plan: $(".plan", card).value,
+        });
+        render();
+      } catch (err) { $(".plan-err", card).textContent = err.message; }
+    };
+  });
+}
+
+$("#cancel").onclick = () => api("POST", "/api/jobs/current/cancel").catch((e) => alert(e.message));
+
+const log = $("#log");
+const es = new EventSource("/api/jobs/current/stream");
+es.onmessage = (e) => {
+  const ev = JSON.parse(e.data);
+  if (ev.type === "line") {
+    log.textContent += ev.text + "\n";
+    log.scrollTop = log.scrollHeight;
+  } else if (ev.type === "status") {
+    if (ev.state === "running") { log.textContent = ""; if (currentProject) loadProject(currentProject); }
+    if (ev.state === "exited") {
+      log.textContent += `\n— stage exited with code ${ev.returncode} —\n`;
+      if (currentProject) loadProject(currentProject);
+    }
+  }
+};
+
+window.addEventListener("hashchange", route);
+route();
+</script>
