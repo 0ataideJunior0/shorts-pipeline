@@ -122,14 +122,23 @@ class JobRunner:
                 raise JobBusy("no job is running")
             job = self._job
             job.canceled = True
-            pgid = os.getpgid(job.proc.pid)
-        os.killpg(pgid, signal.SIGTERM)
+            try:
+                pgid = os.getpgid(job.proc.pid)
+            except ProcessLookupError:
+                return
+        try:
+            os.killpg(pgid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
         for _ in range(30):
             if job.returncode is not None:
                 break
             time.sleep(0.1)
         else:
-            os.killpg(pgid, signal.SIGKILL)
+            try:
+                os.killpg(pgid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
 
     # ---- listeners ---------------------------------------------------
 

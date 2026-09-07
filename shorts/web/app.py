@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import os
+import queue
+import sys
 from pathlib import Path
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, Response, jsonify, request, send_from_directory
 
 from shorts.config import Config
 from shorts.web.edits import (
     EditError, apply_idea_edit, build_prompt_json, validate_plan_text,
 )
-from shorts.project import Project
-from shorts.web.jobs import JobRunner
+from shorts.project import Project, slugify
+from shorts.web.jobs import (
+    ALLOWED_STAGES, JobBusy, JobRunner, _HEARTBEAT_SECONDS, sse_format, stage_argv,
+)
 from shorts.web.state import build_snapshot, list_projects
 
 _STATIC = Path(__file__).parent / "static"
@@ -36,6 +40,9 @@ def create_app(config: Config) -> Flask:
     app.config["SHORTS_CONFIG"] = config
     app.config["JOB_RUNNER"] = runner
 
+    def _runner():
+        return app.config["JOB_RUNNER"]
+
     @app.get("/")
     def index():
         return send_from_directory(_STATIC, "index.html")
@@ -51,16 +58,16 @@ def create_app(config: Config) -> Flask:
         except FileNotFoundError:
             return _json_error(404, f"no such project: {name}")
         snap = build_snapshot(project, config)
-        snap["job"] = runner.state() if runner.running() else None
+        snap["job"] = _runner().state() if _runner().running() else None
         return jsonify(snap)
 
     @app.get("/api/jobs/current")
     def api_job_current():
-        return jsonify(runner.state())
+        return jsonify(_runner().state())
 
     def _snapshot(project):
         snap = build_snapshot(project, config)
-        snap["job"] = runner.state() if runner.running() else None
+        snap["job"] = _runner().state() if _runner().running() else None
         return jsonify(snap)
 
     @app.put("/api/projects/<name>/prompt")
@@ -113,5 +120,72 @@ def create_app(config: Config) -> Flask:
         project.renders_dir.mkdir(parents=True, exist_ok=True)
         _atomic_write(project.plan_file(slug), content)
         return _snapshot(project)
+
+    _RUNNABLE = tuple(s for s in ALLOWED_STAGES if s != "fetch")
+
+    @app.post("/api/projects")
+    def api_new_project():
+        body = request.get_json(silent=True) or {}
+        url = str(body.get("url", "")).strip()
+        name = str(body.get("name", "")).strip()
+        if not url or not name:
+            return _json_error(400, "url and name are required")
+        slug = slugify(name)
+        cmd = [sys.executable, "-m", "shorts",
+               *stage_argv("fetch", slug, url=url, force=bool(body.get("force")))]
+        try:
+            _runner().start("fetch", slug, cmd)
+        except JobBusy as exc:
+            return _json_error(409, str(exc))
+        return jsonify(_runner().state()), 202
+
+    @app.post("/api/projects/<name>/run/<stage>")
+    def api_run_stage(name: str, stage: str):
+        if stage not in _RUNNABLE:
+            return _json_error(400, f"cannot run stage: {stage}")
+        try:
+            _load_project(config, name)
+        except FileNotFoundError:
+            return _json_error(404, f"no such project: {name}")
+        body = request.get_json(silent=True) or {}
+        cmd = [sys.executable, "-m", "shorts",
+               *stage_argv(stage, name, force=bool(body.get("force")))]
+        try:
+            _runner().start(stage, name, cmd)
+        except JobBusy as exc:
+            return _json_error(409, str(exc))
+        return jsonify(_runner().state()), 202
+
+    @app.get("/api/jobs/current/stream")
+    def api_stream():
+        runner = _runner()
+        q = runner.attach()
+
+        def gen():
+            try:
+                while True:
+                    try:
+                        event = q.get(timeout=_HEARTBEAT_SECONDS)
+                    except queue.Empty:
+                        yield ": heartbeat\n\n"
+                        continue
+                    if event is None:
+                        return
+                    yield sse_format(event)
+            finally:
+                runner.detach(q)
+
+        return Response(gen(), mimetype="text/event-stream", headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        })
+
+    @app.post("/api/jobs/current/cancel")
+    def api_cancel():
+        try:
+            _runner().cancel()
+        except JobBusy as exc:
+            return _json_error(409, str(exc))
+        return jsonify(_runner().state())
 
     return app

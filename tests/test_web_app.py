@@ -138,3 +138,103 @@ def test_put_plan_valid_and_invalid(client):
 
     bad = c.put("/api/projects/demo/ideas/01-x/plan", json={"plan": "{bad"})
     assert bad.status_code == 422
+
+
+class _FakeRunner:
+    def __init__(self):
+        self.started = []
+        self.busy = False
+        self._q = None
+
+    def running(self):
+        return self.busy
+
+    def state(self):
+        return {"running": self.busy, "stage": "fetch" if self.busy else None,
+                "project": "demo" if self.busy else None,
+                "started_at": None, "returncode": None, "finished_at": None}
+
+    def start(self, stage, project, cmd):
+        from shorts.web.jobs import JobBusy
+        if self.busy:
+            raise JobBusy("busy")
+        self.started.append((stage, project, cmd))
+        self.busy = True
+
+    def cancel(self):
+        from shorts.web.jobs import JobBusy
+        if not self.busy:
+            raise JobBusy("idle")
+        self.busy = False
+
+    def attach(self):
+        import queue
+        q = queue.Queue()
+        q.put({"type": "line", "text": "hello from stream"})
+        q.put(None)
+        return q
+
+    def detach(self, q):
+        pass
+
+
+@pytest.fixture
+def fake_client(tmp_path):
+    cfg = _config(tmp_path)
+    Project.create(cfg.projects_dir, "demo")
+    Manifest.new("demo").save((cfg.projects_dir / "demo" / "manifest.json"))
+    app = create_app(cfg)
+    fake = _FakeRunner()
+    app.config["JOB_RUNNER"] = fake
+    return app.test_client(), fake
+
+
+def test_post_run_stage_builds_argv(fake_client):
+    c, fake = fake_client
+    resp = c.post("/api/projects/demo/run/ideate", json={"force": True})
+    assert resp.status_code == 202
+    stage, project, cmd = fake.started[0]
+    assert stage == "ideate" and project == "demo"
+    assert cmd[-3:] == ["ideate", "demo", "--force"]
+    assert cmd[1:3] == ["-m", "shorts"]
+
+
+def test_post_run_bad_stage_400(fake_client):
+    c, _ = fake_client
+    assert c.post("/api/projects/demo/run/fetch").status_code == 400
+    assert c.post("/api/projects/demo/run/bogus").status_code == 400
+
+
+def test_post_run_busy_409(fake_client):
+    c, fake = fake_client
+    fake.busy = True
+    assert c.post("/api/projects/demo/run/voice").status_code == 409
+
+
+def test_post_projects_requires_url_and_name(fake_client):
+    c, _ = fake_client
+    assert c.post("/api/projects", json={"url": "http://x"}).status_code == 400
+    assert c.post("/api/projects", json={"name": "y"}).status_code == 400
+
+
+def test_post_projects_starts_fetch(fake_client):
+    c, fake = fake_client
+    resp = c.post("/api/projects", json={"url": "http://x", "name": "New Clip"})
+    assert resp.status_code == 202
+    stage, project, cmd = fake.started[0]
+    assert stage == "fetch" and project == "new-clip"
+    assert cmd[-4:] == ["fetch", "http://x", "--name", "new-clip"]
+
+
+def test_stream_returns_buffered_event(fake_client):
+    c, _ = fake_client
+    resp = c.get("/api/jobs/current/stream")
+    assert resp.status_code == 200
+    assert resp.mimetype == "text/event-stream"
+    body = resp.get_data(as_text=True)
+    assert 'data: {"type": "line", "text": "hello from stream"}' in body
+
+
+def test_cancel_idle_409(fake_client):
+    c, _ = fake_client
+    assert c.post("/api/jobs/current/cancel").status_code == 409
