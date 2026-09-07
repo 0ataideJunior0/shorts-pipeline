@@ -194,3 +194,37 @@ def test_invalid_toml(tmp_path):
     (tmp_path / ".env").write_text("OPENAI_API_KEY=sk-test\n")
     with pytest.raises(ConfigError, match="not valid TOML"):
         load_config(tmp_path)
+
+
+def test_youtube_defaults_when_section_absent(tmp_path):
+    _write(tmp_path)
+    cfg = load_config(tmp_path)
+    assert cfg.youtube.client_secret is None
+    assert cfg.youtube.token_path == (tmp_path / ".youtube_token.json").resolve()
+    assert cfg.youtube.category_id == 22
+
+
+def test_youtube_section_parsed_and_resolved(tmp_path):
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    (tmp_path / "config.toml").write_text(
+        f'projects_dir="projects"\nassets_dir="{assets}"\n\n'
+        '[youtube]\nclient_secret = "creds/cs.json"\n'
+        'token_path = "sub/tok.json"\ncategory_id = 20\n'
+    )
+    (tmp_path / ".env").write_text("OPENAI_API_KEY=sk-test\n")
+    cfg = load_config(tmp_path)
+    assert cfg.youtube.client_secret == str((tmp_path / "creds/cs.json").resolve())
+    assert cfg.youtube.token_path == (tmp_path / "sub/tok.json").resolve()
+    assert cfg.youtube.category_id == 20
+
+
+def test_youtube_bad_category_id(tmp_path):
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    (tmp_path / "config.toml").write_text(
+        f'projects_dir="projects"\nassets_dir="{assets}"\n\n[youtube]\ncategory_id = 0\n'
+    )
+    (tmp_path / ".env").write_text("OPENAI_API_KEY=sk-test\n")
+    with pytest.raises(ConfigError, match="youtube.category_id must be > 0"):
+        load_config(tmp_path)

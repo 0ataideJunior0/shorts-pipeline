@@ -55,6 +55,13 @@ class RenderCfg:
 
 
 @dataclass(frozen=True)
+class YouTubeCfg:
+    client_secret: str | None
+    token_path: Path
+    category_id: int
+
+
+@dataclass(frozen=True)
 class Config:
     root: Path
     projects_dir: Path
@@ -65,6 +72,7 @@ class Config:
     voice: VoiceCfg
     render: RenderCfg
     openai_api_key: str
+    youtube: YouTubeCfg
 
 
 _ASPECTS = {"9:16", "16:9"}
@@ -196,6 +204,18 @@ def load_config(root: Path | None = None) -> Config:
         if not 0.25 <= voice_speed <= 4.0:
             raise ConfigError("voice.speed must be between 0.25 and 4.0")
 
+    yt = raw.get("youtube", {})
+    yt_secret = yt.get("client_secret")
+    if yt_secret is not None:
+        p = Path(str(yt_secret)).expanduser()
+        yt_secret = str(p if p.is_absolute() else (root / p).resolve())
+    yt_token = Path(str(yt.get("token_path", ".youtube_token.json"))).expanduser()
+    if not yt_token.is_absolute():
+        yt_token = (root / yt_token).resolve()
+    yt_category = int(yt.get("category_id", 22))
+    if yt_category <= 0:
+        raise ConfigError("youtube.category_id must be > 0")
+
     return Config(
         root=root,
         projects_dir=projects_dir,
@@ -211,4 +231,9 @@ def load_config(root: Path | None = None) -> Config:
         ),
         render=RenderCfg(min_beat_duration=min_beat, subtitle=subtitle),
         openai_api_key=api_key,
+        youtube=YouTubeCfg(
+            client_secret=yt_secret,
+            token_path=yt_token,
+            category_id=yt_category,
+        ),
     )

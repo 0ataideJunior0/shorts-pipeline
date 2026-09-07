@@ -1,7 +1,7 @@
 import json
 
 from shorts.config import (
-    Config, IdeateCfg, RenderCfg, SubtitleCfg, TranscribeCfg, VoiceCfg,
+    Config, IdeateCfg, RenderCfg, SubtitleCfg, TranscribeCfg, VoiceCfg, YouTubeCfg,
 )
 from shorts.project import Manifest, Project, sha256_text
 from shorts.web.state import (
@@ -30,6 +30,9 @@ def _config(tmp_path):
             ),
         ),
         openai_api_key="sk-test",
+        youtube=YouTubeCfg(client_secret=None,
+                           token_path=tmp_path / ".youtube_token.json",
+                           category_id=22),
     )
 
 

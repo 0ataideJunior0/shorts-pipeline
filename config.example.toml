@@ -35,3 +35,8 @@ enabled = true
 # max_chars_per_line = 32
 # max_lines = 2
 # max_duration = 4.0            # seconds per caption cue
+
+[youtube]
+# client_secret = "client_secret.json"   # path to the downloaded OAuth "Desktop app" client
+# token_path    = ".youtube_token.json"  # OAuth token cache (default; git-ignored)
+category_id     = 22                      # default YouTube category (People & Blogs)

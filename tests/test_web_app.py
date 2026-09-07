@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from shorts.config import (
-    Config, IdeateCfg, RenderCfg, SubtitleCfg, TranscribeCfg, VoiceCfg,
+    Config, IdeateCfg, RenderCfg, SubtitleCfg, TranscribeCfg, VoiceCfg, YouTubeCfg,
 )
 from shorts.project import Manifest, Project
 from shorts.web.app import create_app
@@ -30,6 +30,9 @@ def _config(tmp_path: Path) -> Config:
             ),
         ),
         openai_api_key="sk-test",
+        youtube=YouTubeCfg(client_secret=None,
+                           token_path=tmp_path / ".youtube_token.json",
+                           category_id=22),
     )
 
 

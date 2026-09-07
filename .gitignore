@@ -6,3 +6,5 @@ config.toml
 projects/
 .pytest_cache/
 docs
+.youtube_token.json
+client_secret*.json
