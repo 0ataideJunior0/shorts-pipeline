@@ -5,6 +5,7 @@ from pathlib import Path
 
 from shorts.config import Config
 from shorts.ideas import sync_idea_state
+from shorts.markdown import parse_idea_file
 from shorts.project import Manifest, Project, sha256_file
 from shorts.prompt import DEFAULT_IDEATE_PROMPT
 from shorts.stages.plan import plan_opts_hash, subtitle_plan_args
@@ -241,6 +242,68 @@ def list_projects(config: Config) -> list[dict]:
             "stages": {r["stage"]: r["status"] for r in rows},
         })
     return out
+
+
+def publish_queue(project: Project, config: Config) -> dict:
+    from shorts.publish import cadence_from_manifest, iso, parse_iso, resolve_schedule
+
+    manifest = Manifest.load(project.manifest_path)
+    sync_idea_state(project, manifest)
+    manifest.save(project.manifest_path)
+    opts_hash = _opts_hash(config)
+
+    slugs = sorted(manifest.ideas)
+    approved = [s for s in slugs if manifest.get_idea(s).get("approved")]
+    fr = {s: idea_freshness(project, s, manifest, opts_hash) for s in approved}
+
+    overrides: dict = {}
+    taken: set = set()
+    for s in slugs:
+        e = manifest.get_idea(s)
+        if e.get("publish_at"):
+            overrides[s] = parse_iso(e["publish_at"])
+            taken.add(overrides[s])
+        yt = e.get("youtube") or {}
+        if yt.get("publish_at"):
+            taken.add(parse_iso(yt["publish_at"]))
+
+    slot_slugs = [
+        s for s in approved
+        if fr[s]["render"] == "fresh" and not manifest.get_idea(s).get("youtube")
+    ]
+    sched = resolve_schedule(
+        slot_slugs,
+        {s: overrides[s] for s in slot_slugs if s in overrides},
+        cadence_from_manifest(manifest.get_publish()),
+        taken,
+    )
+
+    items = []
+    for s in approved:
+        e = manifest.get_idea(s)
+        yt = e.get("youtube")
+        override_iso = e.get("publish_at") or None
+        resolved = None
+        from_cadence = False
+        if s in sched and sched[s] is not None:
+            resolved = iso(sched[s])
+            from_cadence = override_iso is None
+        elif override_iso:
+            resolved = override_iso
+        parsed = parse_idea_file(project.idea_file(s).read_text(encoding="utf-8")) \
+            if project.idea_file(s).exists() else None
+        items.append({
+            "slug": s,
+            "title": (parsed.frontmatter.get("title") if parsed else "") or s,
+            "render": fr[s]["render"],
+            "publish_at_override": override_iso,
+            "publish_at": resolved,
+            "from_cadence": from_cadence,
+            "youtube": {k: yt.get(k) for k in ("video_id", "url", "publish_at", "uploaded_at")}
+            if yt else None,
+        })
+
+    return {"cadence": manifest.get_publish() or None, "items": items}
 
 
 def _mtime_iso(path: Path) -> str:

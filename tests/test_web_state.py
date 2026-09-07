@@ -165,3 +165,55 @@ def test_list_projects(tmp_path):
     rows = list_projects(cfg)
     assert rows[0]["name"] == "demo"
     assert "fetch" in rows[0]["stages"]
+
+
+def test_publish_queue_shape(tmp_path):
+    from shorts.web.state import publish_queue
+    from shorts.project import Manifest, sha256_file
+    cfg, project = _project(tmp_path)
+
+    # 01-x: approved + fresh render ; 02-y: approved, not rendered
+    for slug in ("01-x", "02-y"):
+        project.idea_file(slug).write_text(_idea_md(slug, f"n {slug}", approved=True))
+    project.render_file("01-x").parent.mkdir(parents=True, exist_ok=True)
+    project.render_file("01-x").write_bytes(b"mp4")
+    project.plan_file("01-x").write_text('{"beats": []}')
+
+    m = Manifest.load(project.manifest_path)
+    from shorts.web.state import _opts_hash
+    m.set_idea("01-x", approved=True, script_sha256="s",
+               voice={"path": "voice/01-x.mp3", "script_sha256": "s", "params_sha256": "vp"},
+               plan={"path": "renders/01-x.plan.json", "script_sha256": "s",
+                     "voice_params_sha256": "vp", "opts_sha256": _opts_hash(cfg)},
+               render={"path": "renders/01-x.mp4",
+                       "plan_sha256": sha256_file(project.plan_file("01-x"))})
+    m.set_idea("02-y", approved=True, script_sha256="s")
+    m.set_publish(start="2026-09-14T09:00:00Z", interval_hours=24, weekdays=None)
+    m.save(project.manifest_path)
+
+    q = publish_queue(project, cfg)
+    assert q["cadence"]["start"] == "2026-09-14T09:00:00Z"
+    by = {i["slug"]: i for i in q["items"]}
+    assert by["01-x"]["render"] == "fresh"
+    assert by["01-x"]["publish_at"] == "2026-09-14T09:00:00Z"
+    assert by["01-x"]["from_cadence"] is True
+    assert by["01-x"]["youtube"] is None
+    assert by["02-y"]["render"] == "missing"
+    assert by["02-y"]["publish_at"] is None
+
+
+def test_publish_queue_override_and_uploaded(tmp_path):
+    from shorts.web.state import publish_queue
+    from shorts.project import Manifest
+    cfg, project = _project(tmp_path)
+    project.idea_file("01-x").write_text(_idea_md("01-x", "n", approved=True))
+    m = Manifest.load(project.manifest_path)
+    m.set_idea("01-x", approved=True, script_sha256="s",
+               publish_at="2026-10-01T12:00:00Z",
+               youtube={"video_id": "vid", "url": "https://youtu.be/vid",
+                        "publish_at": "2026-10-01T12:00:00Z", "uploaded_at": "2026-09-20T00:00:00Z"})
+    m.save(project.manifest_path)
+    q = publish_queue(project, cfg)
+    it = q["items"][0]
+    assert it["publish_at_override"] == "2026-10-01T12:00:00Z"
+    assert it["youtube"]["video_id"] == "vid"
