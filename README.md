@@ -70,7 +70,10 @@ invoking `python -m shorts <stage>` as a subprocess.
 
 **Localhost only.** There is no authentication. Do not pass `--host 0.0.0.0` or
 otherwise expose the port: the server can start processes and serves data
-derived from your `.env`.
+derived from your `.env`. There is also no CSRF protection, so any web page open
+in the same browser can fire simple cross-origin `POST`s at `127.0.0.1:8765`
+(e.g. `POST /api/projects/<name>/run/<stage>`, which takes no body) — an accepted
+risk for this local-only, single-user tool.
 
 ## Setup
 

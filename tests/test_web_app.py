@@ -79,6 +79,22 @@ def test_get_unknown_project_404(client):
     assert "error" in resp.get_json()
 
 
+def test_corrupt_manifest_is_422_and_does_not_500_the_list(client):
+    c, cfg, _ = client
+    broken = cfg.projects_dir / "broken"
+    broken.mkdir()
+    (broken / "manifest.json").write_text("{ truncated")
+
+    detail = c.get("/api/projects/broken")
+    assert detail.status_code == 422
+    assert "manifest.json" in detail.get_json()["error"]
+
+    listing = c.get("/api/projects")
+    assert listing.status_code == 200
+    names = [r["name"] for r in listing.get_json()]
+    assert "demo" in names and "broken" not in names
+
+
 def test_get_jobs_current_idle(client):
     c, _, _ = client
     assert c.get("/api/jobs/current").get_json()["running"] is False

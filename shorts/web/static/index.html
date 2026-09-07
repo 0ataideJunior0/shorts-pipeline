@@ -135,7 +135,7 @@ function stageRow(st) {
 }
 
 function ideaCard(idea) {
-  return `<div class="card" data-slug="${idea.slug}">
+  return `<div class="card" data-slug="${escapeHtml(idea.slug)}">
     <div class="row">
       <b>${escapeHtml(idea.title)}</b>
       <label><input type="checkbox" class="approved" ${idea.approved ? "checked" : ""}> approved</label>
@@ -157,7 +157,9 @@ function ideaCard(idea) {
 }
 
 function escapeHtml(s) {
-  return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  return String(s).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
 }
 
 function wire() {

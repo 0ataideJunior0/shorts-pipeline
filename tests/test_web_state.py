@@ -1,7 +1,5 @@
 import json
 
-import pytest
-
 from shorts.config import (
     Config, IdeateCfg, RenderCfg, SubtitleCfg, TranscribeCfg, VoiceCfg,
 )

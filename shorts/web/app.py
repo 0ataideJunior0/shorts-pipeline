@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import queue
 import sys
@@ -22,7 +23,7 @@ _STATIC = Path(__file__).parent / "static"
 
 def _atomic_write(path: Path, text: str) -> None:
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(text)
+    tmp.write_text(text, encoding="utf-8")
     os.replace(tmp, path)
 
 
@@ -57,16 +58,20 @@ def create_app(config: Config) -> Flask:
             project = _load_project(config, name)
         except FileNotFoundError:
             return _json_error(404, f"no such project: {name}")
-        snap = build_snapshot(project, config)
-        snap["job"] = _runner().state() if _runner().running() else None
-        return jsonify(snap)
+        return _snapshot(project)
 
     @app.get("/api/jobs/current")
     def api_job_current():
         return jsonify(_runner().state())
 
     def _snapshot(project):
-        snap = build_snapshot(project, config)
+        try:
+            snap = build_snapshot(project, config)
+        except FileNotFoundError:
+            # manifest.json not written yet (e.g. fetch subprocess still running)
+            return _json_error(404, f"no such project: {project.name}")
+        except (json.JSONDecodeError, KeyError):
+            return _json_error(422, f"{project.name}/manifest.json is not valid JSON")
         snap["job"] = _runner().state() if _runner().running() else None
         return jsonify(snap)
 
@@ -97,7 +102,7 @@ def create_app(config: Config) -> Flask:
         body = request.get_json(silent=True) or {}
         try:
             new_text = apply_idea_edit(
-                idea_path.read_text(),
+                idea_path.read_text(encoding="utf-8"),
                 narration=str(body.get("narration", "")),
                 approved=bool(body.get("approved", False)),
             )
@@ -159,9 +164,9 @@ def create_app(config: Config) -> Flask:
     @app.get("/api/jobs/current/stream")
     def api_stream():
         runner = _runner()
-        q = runner.attach()
 
         def gen():
+            q = runner.attach()
             try:
                 while True:
                     try:

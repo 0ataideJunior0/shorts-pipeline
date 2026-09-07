@@ -9,8 +9,6 @@ from shorts.project import Manifest, Project, sha256_file
 from shorts.prompt import DEFAULT_IDEATE_PROMPT
 from shorts.stages.plan import plan_opts_hash, subtitle_plan_args
 
-_STAGES = ("fetch", "transcribe", "ideate", "voice", "plan", "render")
-
 
 def _opts_hash(config: Config) -> str:
     return plan_opts_hash(
@@ -23,7 +21,7 @@ def prompt_text(project: Project) -> str:
     path = project.prompt_path
     if not path.exists():
         return DEFAULT_IDEATE_PROMPT
-    raw = path.read_text()
+    raw = path.read_text(encoding="utf-8")
     try:
         data = json.loads(raw)
         value = str(data["prompt"]) if isinstance(data, dict) else ""
@@ -71,7 +69,12 @@ def idea_freshness(
 
 
 def _agg(states: list[str]) -> str:
-    """done if all fresh, stale if any stale/missing, ready if the list is empty."""
+    """done if all fresh, else stale.
+
+    The empty-list branch is a defensive fallback: every call site guards on a
+    non-empty list before calling this, so ``"ready"`` is not returned in normal
+    flow.
+    """
     if not states:
         return "ready"
     return "done" if all(s == "fresh" for s in states) else "stale"
@@ -190,7 +193,7 @@ def build_snapshot(project: Project, config: Config) -> dict:
         plan_json = None
         if plan_file.exists():
             try:
-                plan_json = json.loads(plan_file.read_text())
+                plan_json = json.loads(plan_file.read_text(encoding="utf-8"))
             except json.JSONDecodeError:
                 plan_json = None
         fr = idea_freshness(project, slug, manifest, opts_hash)
@@ -222,8 +225,12 @@ def build_snapshot(project: Project, config: Config) -> dict:
 def list_projects(config: Config) -> list[dict]:
     out = []
     for project in Project.list_all(config.projects_dir):
-        manifest = Manifest.load(project.manifest_path)
-        rows = stage_rows(project, manifest, config)
+        try:
+            manifest = Manifest.load(project.manifest_path)
+            rows = stage_rows(project, manifest, config)
+        except (json.JSONDecodeError, KeyError, FileNotFoundError):
+            # a single corrupt/missing manifest.json must not 500 the whole list
+            continue
         out.append({
             "name": project.name,
             "title": manifest.source.get("title", ""),

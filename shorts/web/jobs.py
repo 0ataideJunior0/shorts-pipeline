@@ -5,7 +5,6 @@ import os
 import queue
 import signal
 import subprocess
-import sys
 import threading
 import time
 import uuid
@@ -146,9 +145,9 @@ class JobRunner:
         q: queue.Queue = queue.Queue()
         with self._lock:
             job = self._job
-            if job:
-                for line in list(job.lines):
-                    q.put({"type": "line", "text": line})
+            # Emit the status event FIRST so the frontend's "a newly-started job
+            # clears the log" branch runs before the replayed buffer is appended
+            # (otherwise a mid-job reload wipes the lines it just replayed).
             if self.running():
                 q.put({
                     "type": "status", "state": "running",
@@ -157,6 +156,9 @@ class JobRunner:
                 })
             else:
                 q.put({"type": "status", "state": "idle"})
+            if job:
+                for line in list(job.lines):
+                    q.put({"type": "line", "text": line})
             self._listeners.append(q)
         return q
 
