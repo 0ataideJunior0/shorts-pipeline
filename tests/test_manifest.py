@@ -49,3 +49,29 @@ def test_stage_and_idea_merge():
     m.set_idea("01-x", script_sha256="h1")
     m.set_idea("01-x", approved=True)
     assert m.get_idea("01-x") == {"approved": True, "script_sha256": "h1"}
+
+
+def test_publish_roundtrips(tmp_path):
+    from shorts.project import Manifest
+    m = Manifest.new("demo")
+    assert m.get_publish() == {}
+    m.set_publish(start="2026-09-10T09:00:00Z", interval_hours=24)
+    m.set_publish(weekdays=[1, 2, 3, 4, 5])
+    m.set_idea("01-x", publish_at="2026-09-11T09:00:00Z")
+    m.set_idea("01-x", youtube={"video_id": "abc", "url": "https://youtu.be/abc"})
+    path = tmp_path / "manifest.json"
+    m.save(path)
+    back = Manifest.load(path)
+    assert back.get_publish() == {
+        "start": "2026-09-10T09:00:00Z", "interval_hours": 24,
+        "weekdays": [1, 2, 3, 4, 5],
+    }
+    assert back.get_idea("01-x")["publish_at"] == "2026-09-11T09:00:00Z"
+    assert back.get_idea("01-x")["youtube"]["video_id"] == "abc"
+
+
+def test_publish_absent_loads_empty(tmp_path):
+    from shorts.project import Manifest
+    path = tmp_path / "manifest.json"
+    path.write_text('{"name": "demo"}')
+    assert Manifest.load(path).get_publish() == {}

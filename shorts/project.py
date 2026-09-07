@@ -154,6 +154,7 @@ class Manifest:
     source: dict = field(default_factory=dict)
     stages: dict = field(default_factory=dict)
     ideas: dict = field(default_factory=dict)
+    publish: dict = field(default_factory=dict)
 
     @classmethod
     def new(cls, name: str) -> "Manifest":
@@ -167,6 +168,7 @@ class Manifest:
             source=data.get("source", {}),
             stages=data.get("stages", {}),
             ideas=data.get("ideas", {}),
+            publish=data.get("publish", {}),
         )
 
     def _to_dict(self) -> dict:
@@ -175,6 +177,7 @@ class Manifest:
             "source": self.source,
             "stages": self.stages,
             "ideas": self.ideas,
+            "publish": self.publish,
         }
 
     def save(self, path: Path) -> None:
@@ -205,3 +208,9 @@ class Manifest:
 
     def get_idea(self, slug: str) -> dict:
         return self.ideas.get(slug, {})
+
+    def set_publish(self, **fields) -> None:
+        self.publish.update(fields)
+
+    def get_publish(self) -> dict:
+        return self.publish
