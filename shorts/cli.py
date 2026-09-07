@@ -4,7 +4,7 @@ import click
 
 from shorts.config import Config, ConfigError, load_config
 from shorts.ideas import sync_idea_state
-from shorts.project import Manifest, Project, sha256_file, slugify
+from shorts.project import Manifest, Project, slugify
 from shorts.stages import fetch as fetch_stage
 from shorts.stages import ideate as ideate_stage
 from shorts.stages import plan as plan_stage
@@ -128,6 +128,7 @@ def status(ctx: click.Context, name: str | None) -> None:
     if project.ideas_dir.is_dir():
         sync_idea_state(project, manifest)
         manifest.save(project.manifest_path)
+        from shorts.web.state import idea_freshness
         opts_hash = plan_opts_hash(
             min_beat_duration=config.render.min_beat_duration,
             subtitle_args=subtitle_plan_args(config.render.subtitle),
@@ -136,30 +137,12 @@ def status(ctx: click.Context, name: str | None) -> None:
         for slug in sorted(manifest.ideas):
             entry = manifest.ideas[slug]
             approved = "x" if entry.get("approved") else " "
-            script_hash = entry.get("script_sha256")
-            voice_meta = entry.get("voice") or {}
-            voice_hash = voice_meta.get("script_sha256")
-            voice_params = voice_meta.get("params_sha256")
-            voice_ok = bool(voice_meta) and voice_hash == script_hash
-
-            plan_meta = entry.get("plan") or {}
-            plan_ok = (
-                bool(plan_meta)
-                and plan_meta.get("script_sha256") == voice_hash
-                and plan_meta.get("voice_params_sha256") == voice_params
-                and plan_meta.get("opts_sha256") == opts_hash
-            )
-
-            plan_file = project.plan_file(slug)
-            plan_file_hash = sha256_file(plan_file) if plan_file.exists() else None
-            render_ok = bool(entry.get("render")) and (
-                (entry.get("render") or {}).get("plan_sha256") == plan_file_hash
-            )
+            fr = idea_freshness(project, slug, manifest, opts_hash)
             click.echo(
                 f"  [{approved}] {slug:<28} "
-                f"{'voice' if voice_ok else '-':<6} "
-                f"{'plan' if plan_ok else '-':<5} "
-                f"{'render' if render_ok else '-'}"
+                f"{'voice' if fr['voice'] == 'fresh' else '-':<6} "
+                f"{'plan' if fr['plan'] == 'fresh' else '-':<5} "
+                f"{'render' if fr['render'] == 'fresh' else '-'}"
             )
 
 
