@@ -3,31 +3,242 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>shorts pipeline</title>
 <style>
-  :root { color-scheme: light dark; }
-  body { font: 14px/1.5 system-ui, sans-serif; margin: 0; padding: 1.5rem; max-width: 900px; }
-  h1 { font-size: 1.2rem; }
-  .row { display: flex; gap: .75rem; align-items: center; padding: .4rem 0; border-bottom: 1px solid #8883; }
-  .badge { font-size: .75rem; padding: .1rem .5rem; border-radius: 999px; border: 1px solid #8886; }
-  .badge.done { background: #1a7f37; color: #fff; border-color: #1a7f37; }
-  .badge.stale { background: #9a6700; color: #fff; border-color: #9a6700; }
-  .badge.blocked { opacity: .5; }
-  .badge.ready { background: #0969da; color: #fff; border-color: #0969da; }
-  .badge.fresh { background: #1a7f37; color: #fff; }
-  .badge.missing { opacity: .5; }
-  button { font: inherit; padding: .3rem .7rem; }
-  textarea { width: 100%; font: 12px/1.4 ui-monospace, monospace; }
-  pre#log { background: #111; color: #eee; padding: .75rem; height: 260px; overflow: auto; white-space: pre-wrap; }
-  .card { border: 1px solid #8884; border-radius: 6px; padding: .75rem; margin: .6rem 0; }
-  .muted { opacity: .6; }
-  .err { color: #d1242f; }
+  /* dark is the resting state of a render-monitoring tool; light is a faithful daytime variant */
+  :root {
+    --bg:#13161b; --panel:#1b1f27; --panel-2:#212630; --line:#2c333e;
+    --ink:#d9dee6; --ink-dim:#8b929f;
+    --run:#f0b45c; --run-tint:#2a2318;
+    --ok:#63c2a4;  --ok-tint:#162420;
+    --fail:#e0796f; --fail-tint:#2a1b19;
+    --sel:#7aa7e0;
+    /* the monitor is a screen: it stays dark in every theme */
+    --mon-bg:#0f1216; --mon-ink:#cbd3dc; --mon-line:#20262e;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, sans-serif;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg:#eef0f2; --panel:#ffffff; --panel-2:#f5f6f8; --line:#d5d9df;
+      --ink:#1f242b; --ink-dim:#667080;
+      --run:#9c6716; --run-tint:#f7edd8;
+      --ok:#1f7d61;  --ok-tint:#e3f1eb;
+      --fail:#b23a30; --fail-tint:#f6e2df;
+      --sel:#2f6cc4;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { color-scheme: dark light; }
+  body {
+    margin:0; background:var(--bg); color:var(--ink);
+    font:14px/1.55 var(--sans);
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap { max-width:880px; margin:0 auto; padding:22px 20px 96px; }
+  a { color:var(--sel); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  h1 { font-size:21px; line-height:1.25; letter-spacing:-.01em; font-weight:600; margin:.1rem 0 .15rem; }
+  textarea {
+    width:100%; background:var(--panel-2); color:var(--ink);
+    border:1px solid var(--line); border-radius:6px; padding:9px 10px;
+    font:12.5px/1.5 var(--mono); resize:vertical;
+  }
+  input[type=text], input:not([type]) {
+    background:var(--panel-2); color:var(--ink); border:1px solid var(--line);
+    border-radius:6px; padding:7px 9px; font:14px var(--sans);
+  }
+  :focus-visible { outline:2px solid var(--sel); outline-offset:2px; border-radius:3px; }
+
+  .btn {
+    font:13px var(--sans); font-weight:500; padding:6px 12px;
+    border:1px solid var(--line); border-radius:6px;
+    background:var(--panel-2); color:var(--ink); cursor:pointer;
+  }
+  .btn:hover:not(:disabled) { border-color:var(--ink-dim); }
+  .btn:disabled { opacity:.45; cursor:default; }
+  .btn-run { background:var(--run); border-color:var(--run); color:#20160a; font-weight:600; }
+  .btn-run:hover:not(:disabled) { filter:brightness(1.07); }
+  .btn-stop { background:transparent; border-color:var(--fail); color:var(--fail); }
+  .btn-stop:hover:not(:disabled) { background:var(--fail-tint); }
+
+  .muted { color:var(--ink-dim); }
+  .err { color:var(--fail); }
+
+  /* ---- top bar ---- */
+  .topbar { display:flex; align-items:baseline; justify-content:space-between; gap:1rem; }
+  .wordmark { font:12px var(--mono); letter-spacing:.04em; color:var(--ink-dim); }
+  .src { font-size:12.5px; }
+
+  /* ---- section heading with a rule that runs to the edge ---- */
+  .head { display:flex; align-items:center; gap:.7rem; margin:1.4rem 0 .65rem; }
+  .head b { font-size:13px; font-weight:600; }
+  .head .fill { flex:1; height:1px; background:var(--line); }
+
+  /* ---- pipeline strip ---- */
+  .strip {
+    display:grid; grid-template-columns:repeat(6,1fr); gap:1px;
+    background:var(--line); border:1px solid var(--line); border-radius:8px; overflow:hidden;
+  }
+  .seg {
+    appearance:none; text-align:left; font:inherit; color:var(--ink);
+    background:var(--panel); border:0; padding:8px 10px 9px;
+    display:flex; flex-direction:column; gap:3px; min-height:50px;
+    position:relative; cursor:pointer;
+  }
+  .seg:disabled { cursor:default; }
+  .seg .idx { position:absolute; top:6px; right:8px; font:10px/1 var(--mono); color:var(--ink-dim); opacity:.7; }
+  .seg .nm { font:13px/1.15 var(--mono); font-weight:600; }
+  .seg .stt { font:11px/1 var(--mono); color:var(--ink-dim); }
+  .seg.done { background:var(--ok-tint); }
+  .seg.done .stt { color:var(--ok); }
+  .seg.ready .stt { color:var(--sel); }
+  .seg.stale { background:var(--run-tint); }
+  .seg.stale .stt { color:var(--run); }
+  .seg.blocked { background:var(--panel); opacity:.5; }
+  .seg.armed:not(.running) { box-shadow: inset 0 0 0 2px var(--sel); }
+  .seg.running {
+    background:var(--run-tint); color:var(--ink);
+    box-shadow: inset 0 0 0 2px var(--run);
+  }
+  .seg.running .stt { color:var(--run); font-weight:600; }
+  .seg.running::after {
+    content:""; position:absolute; left:0; right:0; bottom:0; height:2px;
+    background:linear-gradient(90deg, transparent, var(--run), transparent);
+    background-size:40% 100%; background-repeat:no-repeat;
+    animation:sweep 1.6s linear infinite;
+  }
+  .seg.flash-ok { animation:flash 620ms ease-out 1; }
+  .seg.flash-fail { animation:flashFail 620ms ease-out 1; }
+  @keyframes sweep { from { background-position:-40% 0; } to { background-position:140% 0; } }
+  @keyframes flash { 0% { box-shadow:inset 0 0 0 2px var(--ok), 0 0 22px var(--ok); } 100% { box-shadow:inset 0 0 0 1px var(--line); } }
+  @keyframes flashFail { 0% { box-shadow:inset 0 0 0 2px var(--fail), 0 0 22px var(--fail); } 100% { box-shadow:inset 0 0 0 1px var(--line); } }
+
+  /* ---- run/arm deck below the strip ---- */
+  .deck {
+    margin-top:11px; border:1px solid var(--line); border-radius:8px;
+    background:var(--panel); padding:9px 13px;
+    display:flex; align-items:center; gap:.75rem; flex-wrap:wrap;
+  }
+  .deck.armed { border-color:var(--sel); }
+  .deck.running { border-color:var(--run); background:var(--run-tint); }
+  .deck .d-stage { font:15px var(--mono); font-weight:600; }
+  .deck .d-status { font:12px var(--mono); color:var(--ink-dim); }
+  .deck.armed .d-status { color:var(--sel); }
+  .deck .d-detail { font-size:12.5px; color:var(--ink-dim); flex:1 1 12rem; min-width:0; }
+  .deck .d-elapsed { margin-left:auto; font:13px var(--mono); color:var(--run); font-variant-numeric:tabular-nums; }
+  .deck .d-tail {
+    flex:1 1 100%; font:11.5px var(--mono); color:var(--ink-dim);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .deck .spacer { flex:1; }
+  .deck label { font:12px var(--mono); color:var(--ink-dim); display:inline-flex; align-items:center; gap:.35rem; }
+  .deck.idle { color:var(--ink-dim); font-size:12.5px; display:block; }
+
+  /* ---- brief ---- */
+  .brief-help { display:block; margin-top:.35rem; font-size:12.5px; color:var(--ink-dim); }
+  #save-prompt { margin-top:.5rem; }
+
+  /* ---- ideas ---- */
+  .card { border:1px solid var(--line); border-radius:8px; background:var(--panel); padding:12px 13px; margin:.55rem 0; }
+  .card-top { display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; }
+  .card-top .title { font-size:15px; font-weight:600; flex:1 1 12rem; }
+  .approve { font-size:12px; color:var(--ink-dim); display:inline-flex; align-items:center; gap:.35rem; white-space:nowrap; }
+  .frow { display:flex; gap:.6rem; font:11.5px var(--mono); }
+  .frow .fr { color:var(--ink-dim); }
+  .frow .fr.fresh { color:var(--ok); }
+  .frow .fr.stale { color:var(--run); }
+  .card textarea { margin:.6rem 0 .45rem; }
+  .card details { margin-top:.5rem; border-top:1px solid var(--line); padding-top:.5rem; }
+  .card summary { font:12px var(--mono); color:var(--ink-dim); cursor:pointer; }
+  .plan-err { display:block; margin-top:.35rem; font-size:12px; }
+
+  /* ---- projects list ---- */
+  .newproj { display:flex; flex-direction:column; gap:.55rem; max-width:26rem; margin:1rem 0 1.6rem; }
+  .newproj label { font-size:12.5px; color:var(--ink-dim); }
+  .newproj label input { display:block; width:100%; margin-top:.2rem; }
+  .plist a.p-row {
+    display:flex; align-items:center; gap:.8rem; padding:.6rem .1rem;
+    border-bottom:1px solid var(--line); color:var(--ink);
+  }
+  .plist a.p-row:hover { text-decoration:none; color:var(--sel); }
+  .plist .p-name { font-weight:600; }
+  .plist .p-title { flex:1; font-size:12.5px; color:var(--ink-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .mini { display:inline-grid; grid-template-columns:repeat(6,7px); gap:2px; }
+  .mini i { height:14px; border-radius:1px; background:var(--line); }
+  .mini i.done { background:var(--ok); }
+  .mini i.stale { background:var(--run); }
+  .mini i.ready { background:var(--sel); }
+
+  /* ---- monitor: persists across re-renders; pins to the foot only while a stage runs ---- */
+  #monitor {
+    margin-top:1.4rem; border:1px solid var(--mon-line); border-radius:8px; overflow:hidden;
+    background:var(--mon-bg);
+  }
+  #monitor.pinned {
+    position:sticky; bottom:8px;
+    box-shadow:0 12px 28px -14px rgba(0,0,0,.6);
+  }
+  #monitor.pinned #log { height:150px; }
+  .mon-head {
+    display:flex; align-items:center; gap:.6rem;
+    background:var(--mon-bg); color:var(--mon-ink);
+    border-bottom:1px solid var(--mon-line); padding:6px 12px;
+    font:12px var(--mono);
+  }
+  .mon-head .live { color:var(--run); display:inline-flex; align-items:center; gap:.35rem; }
+  .mon-head .live::before {
+    content:""; width:7px; height:7px; border-radius:50%; background:var(--run);
+    animation:blink 1.3s ease-in-out infinite;
+  }
+  .mon-when { margin-left:auto; color:var(--mon-ink); opacity:.6; }
+  #log {
+    margin:0; background:var(--mon-bg); color:var(--mon-ink);
+    padding:11px 12px; height:200px; overflow:auto;
+    font:12.5px/1.5 var(--mono); white-space:pre-wrap; word-break:break-word;
+  }
+  #log:empty::before { content:"Waiting for a stage to run."; color:#5b6470; }
+  @keyframes blink { 0%,100% { opacity:1; } 50% { opacity:.25; } }
+
+  /* ---- top progress bar ---- */
+  #bar { position:fixed; inset:0 0 auto 0; height:2px; background:var(--run-tint); z-index:9; overflow:hidden; }
+  #bar::after {
+    content:""; position:absolute; inset:0; width:32%; background:var(--run);
+    animation:track 1.15s ease-in-out infinite;
+  }
+  @keyframes track { 0% { left:-32%; } 100% { left:100%; } }
+
+  @media (max-width:680px) {
+    .strip { grid-template-columns:1fr; }
+    .seg { flex-direction:row; align-items:center; gap:.6rem; min-height:0; padding:10px 12px; }
+    .seg .idx { order:0; }
+    .seg .stt { margin-top:0; margin-left:auto; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .seg.running::after { animation:none; background:var(--run); }
+    .seg.flash-ok, .seg.flash-fail { animation:none; }
+    .mon-head .live::before { animation:none; }
+    #bar::after { animation:none; left:0; width:100%; }
+  }
 </style>
 
-<div id="app">loading…</div>
-<h2>Log <button id="cancel" hidden>Cancel</button></h2>
-<pre id="log"></pre>
+<div class="wrap">
+  <div id="app">Loading…</div>
+
+  <section id="monitor">
+    <div class="mon-head">
+      <span>Monitor</span>
+      <span class="live" hidden>live</span>
+      <span class="mon-when"></span>
+    </div>
+    <pre id="log"></pre>
+  </section>
+</div>
+<div id="bar" hidden></div>
 
 <script>
 const $ = (sel, el = document) => el.querySelector(sel);
+const STAGES = ["fetch", "transcribe", "ideate", "voice", "plan", "render"];
+
 const api = async (method, path, body) => {
   const r = await fetch(path, {
     method,
@@ -39,148 +250,257 @@ const api = async (method, path, body) => {
   return data;
 };
 
-let state = null;
-let currentProject = null;
-
-function route() {
-  const hash = location.hash.slice(2); // after "#/"
-  currentProject = hash || null;
-  if (currentProject) loadProject(currentProject);
-  else loadList();
-}
-
-async function loadList() {
-  let rows;
-  try { rows = await api("GET", "/api/projects"); }
-  catch (err) {
-    $("#app").innerHTML = `<p class="err">${escapeHtml(err.message)}</p> <a href="#/" onclick="route()">retry</a>`;
-    return;
-  }
-  const app = $("#app");
-  app.innerHTML = `
-    <h1>shorts pipeline</h1>
-    <form id="new">
-      <input name="name" placeholder="project name" required>
-      <input name="url" placeholder="youtube url" size="40" required>
-      <button>Create</button>
-    </form>
-    <div id="projects"></div>`;
-  $("#new").onsubmit = async (e) => {
-    e.preventDefault();
-    const f = e.target;
-    try {
-      await api("POST", "/api/projects", { name: f.name.value, url: f.url.value });
-      location.hash = "#/" + slugify(f.name.value);
-    } catch (err) { alert(err.message); }
-  };
-  $("#projects").innerHTML = rows.map((p) => `
-    <div class="row">
-      <a href="#/${encodeURIComponent(p.name)}"><b>${escapeHtml(p.name)}</b></a>
-      <span class="muted">${escapeHtml(p.title || "")}</span>
-    </div>`).join("") || "<p class='muted'>no projects yet</p>";
-}
-
-function slugify(s) {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "untitled";
-}
-
-async function loadProject(name) {
-  try { state = await api("GET", `/api/projects/${name}`); }
-  catch (err) { $("#app").innerHTML = `<p class="err">${escapeHtml(err.message)}</p> <a href="#/">back</a>`; return; }
-  render();
-}
-
-function render() {
-  if (!state) return;
-  const s = state;
-  const running = s.job && s.job.running;
-  $("#cancel").hidden = !running;
-  const srcUrl = s.source.url || "";
-  const srcIsHttp = /^https?:\/\//i.test(srcUrl);
-  const sourceBit = srcUrl
-    ? (srcIsHttp
-        ? `· <a href="${escapeHtml(srcUrl)}">source</a>`
-        : `· <span class="muted">${escapeHtml(srcUrl)}</span>`)
-    : "";
-  $("#app").innerHTML = `
-    <a href="#/">← projects</a>
-    <h1>${escapeHtml(s.name)}</h1>
-    <p class="muted">${escapeHtml(s.source.title || "")} ${sourceBit}</p>
-    <h2>Pipeline</h2>
-    ${s.stages.map(stageRow).join("")}
-    <h2>Prompt</h2>
-    <textarea id="prompt" rows="5">${escapeHtml(s.prompt)}</textarea>
-    <button id="save-prompt">Save prompt</button>
-    <span class="muted">run ideate --force to apply</span>
-    <h2>Ideas</h2>
-    ${s.ideas.map(ideaCard).join("") || "<p class='muted'>run ideate</p>"}`;
-  wire();
-}
-
-function stageRow(st) {
-  const disabled = st.status === "blocked" || (state.job && state.job.running);
-  const canForce = st.status !== "blocked";
-  const isFetch = st.stage === "fetch";
-  const controls = isFetch
-    ? `<span class="muted">created via New Project</span>`
-    : `${canForce ? `<label class="muted"><input type="checkbox" class="force" data-stage="${st.stage}"> force</label>` : ""}
-    <button class="run" data-stage="${st.stage}" ${disabled ? "disabled" : ""}>Run</button>`;
-  return `<div class="row">
-    <b style="width:6rem">${st.stage}</b>
-    <span class="badge ${st.status}">${st.status}</span>
-    <span class="muted">${escapeHtml(st.detail || "")}</span>
-    <span style="flex:1"></span>
-    ${controls}
-  </div>`;
-}
-
-function ideaCard(idea) {
-  return `<div class="card" data-slug="${escapeHtml(idea.slug)}">
-    <div class="row">
-      <b>${escapeHtml(idea.title)}</b>
-      <label><input type="checkbox" class="approved" ${idea.approved ? "checked" : ""}> approved</label>
-      <span class="badge ${idea.voice}">voice</span>
-      <span class="badge ${idea.plan}">plan</span>
-      <span class="badge ${idea.render}">render</span>
-    </div>
-    <textarea class="narration" rows="5">${escapeHtml(idea.narration)}</textarea>
-    <button class="save-idea">Save idea</button>
-    <details>
-      <summary>Plan JSON</summary>
-      ${idea.plan_json
-        ? `<textarea class="plan" rows="12">${escapeHtml(JSON.stringify(idea.plan_json, null, 2))}</textarea>
-           <button class="save-plan">Save plan</button>
-           <span class="plan-err err"></span>`
-        : "<p class='muted'>no plan yet — run plan</p>"}
-    </details>
-  </div>`;
-}
-
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   }[c]));
 }
+function slugify(s) {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "untitled";
+}
+function fmt(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+}
+
+let state = null;
+let currentProject = null;
+let armed = null;         // stage name the user has selected to run
+let pending = false;      // Run clicked, waiting for the stream to confirm
+let startedAt = 0;        // ms epoch of the running/pending job
+let lastLine = "";        // most recent non-empty log line, for the deck tail
+let ticker = null;
+const creating = new Set();
+
+function jobHereRunning() {
+  return !!(state && state.job && state.job.running && state.job.project === state.name);
+}
+
+/* ---------- routing ---------- */
+function route() {
+  const hash = decodeURIComponent(location.hash.slice(2));
+  currentProject = hash || null;
+  armed = null;
+  if (currentProject) loadProject(currentProject);
+  else loadList();
+}
+
+/* ---------- projects list ---------- */
+async function loadList() {
+  let rows;
+  try { rows = await api("GET", "/api/projects"); }
+  catch (err) {
+    $("#app").innerHTML =
+      `<p class="err">${escapeHtml(err.message)}</p><p><a href="#/" onclick="route()">Try again</a></p>`;
+    return;
+  }
+  const list = rows.map((p) => {
+    const cells = STAGES.map((st) => `<i class="${p.stages && p.stages[st] || ""}"></i>`).join("");
+    return `<a class="p-row" href="#/${encodeURIComponent(p.name)}">
+      <span class="mini">${cells}</span>
+      <span class="p-name">${escapeHtml(p.name)}</span>
+      <span class="p-title">${escapeHtml(p.title || "")}</span>
+    </a>`;
+  }).join("") || `<p class="muted">No projects yet. Create one above.</p>`;
+
+  $("#app").innerHTML = `
+    <div class="topbar"><span class="wordmark">shorts pipeline</span></div>
+    <h1>Projects</h1>
+    <form class="newproj" id="new">
+      <label>Project name<input name="name" required></label>
+      <label>YouTube URL<input name="url" required></label>
+      <button class="btn btn-run">Create project</button>
+    </form>
+    <div class="plist">${list}</div>`;
+
+  $("#new").onsubmit = async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    const slug = slugify(f.name.value);
+    try {
+      await api("POST", "/api/projects", { name: f.name.value, url: f.url.value });
+      creating.add(slug);
+      location.hash = "#/" + encodeURIComponent(slug);
+    } catch (err) { alert(err.message); }
+  };
+}
+
+/* ---------- one project ---------- */
+async function loadProject(name) {
+  try {
+    state = await api("GET", `/api/projects/${encodeURIComponent(name)}`);
+  } catch (err) {
+    if (creating.has(name) && /no such project/i.test(err.message)) {
+      $("#app").innerHTML = `
+        <div class="topbar"><a href="#/">‹ Projects</a>
+          <span class="wordmark">shorts / ${escapeHtml(name)}</span></div>
+        <h1>${escapeHtml(name)}</h1>
+        <div class="deck running"><span class="d-stage">fetch</span>
+          <span class="d-status">downloading the source video…</span></div>`;
+      setBusy(true);
+      return;
+    }
+    $("#app").innerHTML =
+      `<p class="err">${escapeHtml(err.message)}</p><p><a href="#/">‹ Projects</a></p>`;
+    return;
+  }
+  creating.delete(name);
+  if (jobHereRunning()) {
+    startedAt = Date.parse(state.job.started_at) || startedAt || Date.now();
+  }
+  render();
+}
+
+/* ---------- render ---------- */
+function render() {
+  if (!state) return;
+  const s = state;
+  const runningHere = jobHereRunning();
+
+  // pick the next actionable stage; auto-arm it if the user hasn't chosen one
+  const runnable = (st) => st.stage !== "fetch" && st.status !== "blocked";
+  const next = s.stages.find((st) => st.stage !== "fetch" && (st.status === "ready" || st.status === "stale"));
+  if (!armed && next) armed = next.stage;
+  const armedRow = s.stages.find((st) => st.stage === armed && runnable(st)) || null;
+
+  const srcUrl = s.source.url || "";
+  const srcLink = /^https?:\/\//i.test(srcUrl)
+    ? ` &nbsp;<a class="src" href="${escapeHtml(srcUrl)}">source</a>`
+    : (srcUrl ? ` &nbsp;<span class="src muted">${escapeHtml(srcUrl)}</span>` : "");
+
+  $("#app").innerHTML = `
+    <div class="topbar">
+      <a href="#/">‹ Projects</a>
+      <span class="wordmark">shorts / ${escapeHtml(s.name)}</span>
+    </div>
+    <h1>${escapeHtml(s.source.title || s.name)}</h1>
+    <p class="muted" style="margin:.1rem 0 0">${escapeHtml(s.name)}${srcLink}</p>
+
+    <div class="head"><b>Pipeline</b><span class="fill"></span></div>
+    <div class="strip">${s.stages.map((st, i) => segment(st, i, runningHere)).join("")}</div>
+    ${deck(s, armedRow, runningHere)}
+
+    <div class="head"><b>Brief</b><span class="fill"></span></div>
+    <textarea id="prompt" rows="5">${escapeHtml(s.prompt)}</textarea>
+    <button class="btn" id="save-prompt">Save brief</button>
+    <span class="brief-help">Ideate reads this the next time it runs.</span>
+
+    <div class="head"><b>Ideas</b><span class="fill"></span></div>
+    ${s.ideas.map(ideaCard).join("") ||
+      `<p class="muted">No ideas yet. Run ideate to generate them.</p>`}`;
+
+  setBusy(runningHere || pending);
+  syncMonitor(runningHere);
+  if (runningHere || pending) startTicker(); else stopTicker();
+  wire();
+}
+
+function segment(st, i, runningHere) {
+  const isRun = runningHere && state.job.stage === st.stage;
+  const armable = st.stage !== "fetch" && st.status !== "blocked";
+  const cls = ["seg", st.status];
+  if (isRun) cls.push("running");
+  else if (!runningHere && armed === st.stage && armable) cls.push("armed");
+  const label = isRun ? "running" : st.status;
+  return `<button class="${cls.join(" ")}" data-stage="${st.stage}" ${armable ? "" : "disabled"}
+      aria-label="${st.stage} — ${label}">
+    <span class="idx">${i + 1}</span>
+    <span class="nm">${st.stage}</span>
+    <span class="stt">${label}</span>
+  </button>`;
+}
+
+function deck(s, armedRow, runningHere) {
+  if (runningHere || pending) {
+    const stage = runningHere ? s.job.stage : armed;
+    return `<div class="deck running" aria-live="polite">
+      <span class="d-stage">${escapeHtml(stage || "")}</span>
+      <span class="d-elapsed" id="elapsed">0:00</span>
+      <button class="btn btn-stop" id="stop">Stop</button>
+      <span class="d-tail" id="tail">${escapeHtml(pending && !runningHere ? "starting…" : (lastLine || "…"))}</span>
+    </div>`;
+  }
+  if (s.job && s.job.running) {
+    return `<div class="deck idle" aria-live="polite">A job is running on
+      <b>${escapeHtml(s.job.project)}</b>. Wait for it to finish before starting another.</div>`;
+  }
+  if (armedRow) {
+    const st = armedRow;
+    const detail = st.status === "done"
+      ? (st.detail || "Up to date. Run with force to rebuild it.")
+      : (st.detail || "");
+    return `<div class="deck armed" aria-live="polite">
+      <span class="d-stage">${st.stage}</span>
+      <span class="d-status">${st.status}</span>
+      <span class="d-detail">${escapeHtml(detail)}</span>
+      <span class="spacer"></span>
+      <label><input type="checkbox" id="armforce"> force</label>
+      <button class="btn btn-run" id="armrun">Run ${st.stage}</button>
+    </div>`;
+  }
+  return `<div class="deck idle">Every stage is current. Edit an idea or the brief, then a stage will offer to re-run.</div>`;
+}
+
+function ideaCard(idea) {
+  const fr = (k) => `<span class="fr ${idea[k]}">${idea[k] === "fresh" ? "●" : idea[k] === "stale" ? "◐" : "○"} ${k}</span>`;
+  const plan = idea.plan_json
+    ? `<textarea class="plan" rows="12">${escapeHtml(JSON.stringify(idea.plan_json, null, 2))}</textarea>
+       <button class="btn save-plan">Save plan</button><span class="plan-err err"></span>`
+    : `<p class="muted" style="margin:.4rem 0 0">No plan yet. Run plan to build the shot list.</p>`;
+  return `<div class="card" data-slug="${escapeHtml(idea.slug)}">
+    <div class="card-top">
+      <span class="title">${escapeHtml(idea.title)}</span>
+      <label class="approve"><input type="checkbox" class="approved" ${idea.approved ? "checked" : ""}> approved</label>
+      <span class="frow">${fr("voice")}${fr("plan")}${fr("render")}</span>
+    </div>
+    <textarea class="narration" rows="5">${escapeHtml(idea.narration)}</textarea>
+    <button class="btn save-idea">Save idea</button>
+    <details><summary>plan.json</summary>${plan}</details>
+  </div>`;
+}
+
+/* ---------- run controls ---------- */
+async function runStage(stage, force) {
+  if (pending || jobHereRunning()) return;
+  pending = true;
+  startedAt = Date.now();
+  lastLine = "";
+  render();
+  try {
+    await api("POST", `/api/projects/${encodeURIComponent(state.name)}/run/${stage}`, { force });
+  } catch (err) {
+    pending = false;
+    render();
+    alert(err.message);
+  }
+}
 
 function wire() {
-  document.querySelectorAll(".run").forEach((b) => b.onclick = async () => {
-    const stage = b.dataset.stage;
-    const force = document.querySelector(`.force[data-stage="${stage}"]`)?.checked || false;
-    try {
-      await api("POST", `/api/projects/${state.name}/run/${stage}`, { force });
-    } catch (err) { alert(err.message); }
+  document.querySelectorAll(".seg[data-stage]").forEach((b) => {
+    if (b.disabled) return;
+    b.onclick = () => { armed = b.dataset.stage; render(); };
   });
+  const armrun = $("#armrun");
+  if (armrun) armrun.onclick = () => runStage(armed, $("#armforce").checked);
+  const stop = $("#stop");
+  if (stop) stop.onclick = () => {
+    stop.disabled = true;
+    api("POST", "/api/jobs/current/cancel").catch((e) => { stop.disabled = false; alert(e.message); });
+  };
+
   $("#save-prompt").onclick = async () => {
     try {
-      state = await api("PUT", `/api/projects/${state.name}/prompt`, { prompt: $("#prompt").value });
+      state = await api("PUT", `/api/projects/${encodeURIComponent(state.name)}/prompt`,
+        { prompt: $("#prompt").value });
       render();
     } catch (err) { alert(err.message); }
   };
+
   document.querySelectorAll(".card").forEach((card) => {
     const slug = card.dataset.slug;
     $(".save-idea", card).onclick = async () => {
       try {
-        state = await api("PUT", `/api/projects/${state.name}/ideas/${slug}`, {
+        state = await api("PUT", `/api/projects/${encodeURIComponent(state.name)}/ideas/${encodeURIComponent(slug)}`, {
           narration: $(".narration", card).value,
           approved: $(".approved", card).checked,
         });
@@ -189,8 +509,9 @@ function wire() {
     };
     const sp = $(".save-plan", card);
     if (sp) sp.onclick = async () => {
+      $(".plan-err", card).textContent = "";
       try {
-        state = await api("PUT", `/api/projects/${state.name}/ideas/${slug}/plan`, {
+        state = await api("PUT", `/api/projects/${encodeURIComponent(state.name)}/ideas/${encodeURIComponent(slug)}/plan`, {
           plan: $(".plan", card).value,
         });
         render();
@@ -199,27 +520,75 @@ function wire() {
   });
 }
 
-$("#cancel").onclick = () => api("POST", "/api/jobs/current/cancel").catch((e) => alert(e.message));
+/* ---------- elapsed timer ---------- */
+function startTicker() {
+  if (ticker) return;
+  ticker = setInterval(() => {
+    const el = $("#elapsed");
+    if (!el || (!jobHereRunning() && !pending)) { stopTicker(); return; }
+    el.textContent = fmt(Date.now() - startedAt);
+  }, 1000);
+}
+function stopTicker() { if (ticker) { clearInterval(ticker); ticker = null; } }
 
+/* ---------- chrome that lives outside #app ---------- */
+function setBusy(on) { $("#bar").hidden = !on; }
+function syncMonitor(runningHere) {
+  $(".live").hidden = !runningHere;
+  $("#monitor").classList.toggle("pinned", runningHere || pending);
+  if (runningHere) $(".mon-when").textContent = "";
+}
+function flashSegment(stage, ok) {
+  const seg = document.querySelector(`.seg[data-stage="${stage}"]`);
+  if (!seg) return;
+  const c = ok ? "flash-ok" : "flash-fail";
+  seg.classList.add(c);
+  setTimeout(() => seg.classList.remove(c), 700);
+}
+
+/* ---------- live stream ---------- */
 const log = $("#log");
 const es = new EventSource("/api/jobs/current/stream");
 es.onmessage = (e) => {
   let ev;
-  try { ev = JSON.parse(e.data); }
-  catch { return; }
+  try { ev = JSON.parse(e.data); } catch { return; }
+
   if (ev.type === "line") {
     log.textContent += ev.text + "\n";
     log.scrollTop = log.scrollHeight;
-  } else if (ev.type === "status") {
-    if (ev.state === "running") { log.textContent = ""; if (currentProject) loadProject(currentProject); }
-    if (ev.state === "exited") {
-      log.textContent += `\n— stage exited with code ${ev.returncode} —\n`;
-      if (currentProject) loadProject(currentProject);
+    if (ev.text.trim()) {
+      lastLine = ev.text.trim();
+      const tail = $("#tail");
+      if (tail) tail.textContent = lastLine;
     }
+    return;
+  }
+  if (ev.type !== "status") return;
+
+  if (ev.state === "running") {
+    log.textContent = "";
+    lastLine = "";
+    pending = false;
+    if (ev.started_at) startedAt = Date.parse(ev.started_at) || startedAt;
+    if (currentProject) loadProject(currentProject);
+  } else if (ev.state === "exited") {
+    const ok = ev.returncode === 0;
+    const runStage = state && state.job ? state.job.stage : null;
+    log.textContent += `\n— ${ok ? "finished" : `failed · exit ${ev.returncode}`} in ${fmt(Date.now() - startedAt)} —\n`;
+    log.scrollTop = log.scrollHeight;
+    $(".mon-when").textContent = ok ? `done in ${fmt(Date.now() - startedAt)}` : `failed · exit ${ev.returncode}`;
+    if (runStage) flashSegment(runStage, ok);
+    pending = false;
+    armed = null;
+    stopTicker();
+    if (currentProject) loadProject(currentProject);
+  } else if (ev.state === "idle") {
+    setBusy(false);
+    $(".live").hidden = true;
   }
 };
 es.onerror = () => {
-  log.textContent += "\n— stream disconnected — reconnecting… —\n";
+  log.textContent += "\n— stream lost, reconnecting… —\n";
   log.scrollTop = log.scrollHeight;
 };
 
