@@ -89,3 +89,52 @@ def test_index_served(client):
     resp = c.get("/")
     assert resp.status_code == 200
     assert b"<" in resp.data
+
+
+def test_put_prompt_writes_file(client):
+    c, _, project = client
+    resp = c.put("/api/projects/demo/prompt", json={"prompt": "novo brief pt-br"})
+    assert resp.status_code == 200
+    assert json.loads(project.prompt_path.read_text()) == {"prompt": "novo brief pt-br"}
+    assert resp.get_json()["prompt"] == "novo brief pt-br"
+
+
+def test_put_prompt_empty_422(client):
+    c, _, _ = client
+    resp = c.put("/api/projects/demo/prompt", json={"prompt": "  "})
+    assert resp.status_code == 422
+
+
+def test_put_idea_updates_md(client):
+    c, _, project = client
+    resp = c.put(
+        "/api/projects/demo/ideas/01-x",
+        json={"narration": "rewritten narration", "approved": False},
+    )
+    assert resp.status_code == 200
+    md = project.idea_file("01-x").read_text()
+    assert "rewritten narration" in md
+    assert "- [ ] Approved" in md
+    assert "## Notes\n\nn" in md
+
+
+def test_put_idea_unknown_slug_404(client):
+    c, _, _ = client
+    resp = c.put(
+        "/api/projects/demo/ideas/99-nope",
+        json={"narration": "x", "approved": False},
+    )
+    assert resp.status_code == 404
+
+
+def test_put_plan_valid_and_invalid(client):
+    c, _, project = client
+    ok = c.put(
+        "/api/projects/demo/ideas/01-x/plan",
+        json={"plan": '{"audio_path":"a.mp3","beats":[{"start":0,"end":1}]}'},
+    )
+    assert ok.status_code == 200
+    assert json.loads(project.plan_file("01-x").read_text())["beats"][0]["end"] == 1
+
+    bad = c.put("/api/projects/demo/ideas/01-x/plan", json={"plan": "{bad"})
+    assert bad.status_code == 422
