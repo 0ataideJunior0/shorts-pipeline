@@ -42,6 +42,22 @@ def test_runner_captures_output_and_exit_code(tmp_path):
     assert any(e["text"] == "world" for e in buffered)
 
 
+def test_attach_replays_exit_for_a_finished_job(tmp_path):
+    runner = JobRunner(tmp_path)
+    runner.start("x", "demo", [sys.executable, "-c", "print('done')"])
+    _drain(runner)
+    events = _collect(runner)  # attach() AFTER the live exited broadcast is gone
+    statuses = [e for e in events if e["type"] == "status"]
+    assert statuses == [{"type": "status", "state": "exited", "returncode": 0,
+                         "finished_at": runner.state()["finished_at"]}]
+    assert not any(e["state"] == "idle" for e in statuses)
+
+
+def test_attach_sends_idle_when_no_job_ran(tmp_path):
+    events = _collect(JobRunner(tmp_path))
+    assert events == [{"type": "status", "state": "idle"}]
+
+
 def _collect(runner):
     q = runner.attach()
     out = []

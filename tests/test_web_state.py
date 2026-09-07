@@ -5,7 +5,8 @@ from shorts.config import (
 )
 from shorts.project import Manifest, Project, sha256_text
 from shorts.web.state import (
-    build_snapshot, idea_freshness, list_projects, prompt_text, stage_rows,
+    build_snapshot, category_report, idea_freshness, list_projects,
+    prompt_text, stage_rows,
 )
 
 
@@ -37,6 +38,7 @@ def _idea_md(slug, narration, approved=False):
     return (
         f"---\nslug: {slug}\ntitle: T\n---\n\n"
         f"- [{box}] Approved\n\n## Description\n\ndesc for {slug}\n\n"
+        f"## Tags\n\ntag one, tag two\n\n"
         f"## Hook\n\nh\n\n"
         f"## Narration\n\n{narration}\n\n## Notes\n\nn\n"
     )
@@ -111,8 +113,40 @@ def test_build_snapshot_shape(tmp_path):
     assert snap["ideas"][0]["approved"] is True
     assert snap["ideas"][0]["narration"] == "script one"
     assert snap["ideas"][0]["description"] == "desc for 01-x"
+    assert snap["ideas"][0]["tags"] == "tag one, tag two"
     assert snap["ideas"][0]["title"] == "T"
     assert snap["ideas"][0]["voice"] == "missing"
+    assert snap["ideas"][0]["voice_hash"] == ""
+
+
+def test_category_report_merges_folders_and_plan_beats(tmp_path):
+    cfg, project = _project(tmp_path)
+    (cfg.assets_dir / "neon").mkdir()
+    (cfg.assets_dir / "neon" / "a.mp4").write_bytes(b"x")
+    (cfg.assets_dir / "coffee").mkdir()  # folder-only, no plan beat
+    project.renders_dir.mkdir(parents=True, exist_ok=True)
+    project.plan_file("01-x").write_text(json.dumps({"beats": [
+        {"category": "neon", "description": "neon skyline"},
+        {"category": "neon", "description": "neon skyline"},  # dup collapsed
+        {"category": "swamp", "description": "misty swamp"},   # no folder
+        {"category": "", "description": "ignored"},
+    ]}))
+    rows = category_report(project, cfg)
+    by = {r["category"]: r for r in rows}
+    assert by["neon"] == {"category": "neon", "assets": 1, "beats": ["neon skyline"]}
+    assert by["swamp"]["assets"] == 0
+    assert by["coffee"]["beats"] == []
+    # plan-referenced categories sort before folder-only ones
+    order = [r["category"] for r in rows]
+    assert order.index("neon") < order.index("coffee")
+    assert order.index("swamp") < order.index("coffee")
+
+
+def test_category_report_no_assets_dir(tmp_path):
+    cfg, project = _project(tmp_path)
+    import shutil
+    shutil.rmtree(cfg.assets_dir)
+    assert category_report(project, cfg) == []
 
 
 def test_prompt_text_fallbacks(tmp_path):

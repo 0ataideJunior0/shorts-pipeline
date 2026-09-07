@@ -12,11 +12,12 @@ from shorts.config import Config
 from shorts.web.edits import (
     EditError, apply_idea_edit, build_prompt_json, validate_plan_text,
 )
+from shorts.markdown import set_approved
 from shorts.project import Project, slugify
 from shorts.web.jobs import (
     ALLOWED_STAGES, JobBusy, JobRunner, _HEARTBEAT_SECONDS, sse_format, stage_argv,
 )
-from shorts.web.state import build_snapshot, list_projects
+from shorts.web.state import build_snapshot, category_report, list_projects
 
 _STATIC = Path(__file__).parent / "static"
 
@@ -105,6 +106,7 @@ def create_app(config: Config) -> Flask:
                 idea_path.read_text(encoding="utf-8"),
                 title=str(body.get("title", "")),
                 description=str(body.get("description", "")),
+                tags=str(body.get("tags", "")),
                 narration=str(body.get("narration", "")),
                 approved=bool(body.get("approved", False)),
             )
@@ -112,6 +114,46 @@ def create_app(config: Config) -> Flask:
             return _json_error(422, str(exc))
         _atomic_write(idea_path, new_text)
         return _snapshot(project)
+
+    @app.put("/api/projects/<name>/ideas/<slug>/approved")
+    def api_put_approved(name: str, slug: str):
+        try:
+            project = _load_project(config, name)
+        except FileNotFoundError:
+            return _json_error(404, f"no such project: {name}")
+        idea_path = project.idea_file(slug)
+        if not idea_path.exists():
+            return _json_error(404, f"no such idea: {slug}")
+        body = request.get_json(silent=True) or {}
+        try:
+            new_text = set_approved(
+                idea_path.read_text(encoding="utf-8"), bool(body.get("approved", False))
+            )
+        except ValueError as exc:
+            return _json_error(422, f"unexpected idea file format: {exc}")
+        _atomic_write(idea_path, new_text)
+        return _snapshot(project)
+
+    @app.get("/api/projects/<name>/voice/<slug>")
+    def api_voice(name: str, slug: str):
+        try:
+            project = _load_project(config, name)
+        except FileNotFoundError:
+            return _json_error(404, f"no such project: {name}")
+        mp3 = project.voice_file(slug)
+        if not mp3.exists():
+            return _json_error(404, f"no audio for {slug}")
+        return send_from_directory(
+            project.voice_dir, mp3.name, mimetype="audio/mpeg", conditional=True
+        )
+
+    @app.get("/api/projects/<name>/categories")
+    def api_categories(name: str):
+        try:
+            project = _load_project(config, name)
+        except FileNotFoundError:
+            return _json_error(404, f"no such project: {name}")
+        return jsonify(category_report(project, config))
 
     @app.put("/api/projects/<name>/ideas/<slug>/plan")
     def api_put_plan(name: str, slug: str):

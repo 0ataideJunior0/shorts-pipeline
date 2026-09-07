@@ -201,9 +201,11 @@ def build_snapshot(project: Project, config: Config) -> dict:
             "slug": slug,
             "title": (p.frontmatter.get("title") if p else "") or slug,
             "description": p.description if p else "",
+            "tags": p.tags if p else "",
             "approved": bool(idea.get("approved")),
             "narration": p.narration if p else "",
             "voice": fr["voice"],
+            "voice_hash": (idea.get("voice") or {}).get("script_sha256", ""),
             "plan": fr["plan"],
             "render": fr["render"],
             "plan_json": plan_json,
@@ -245,3 +247,47 @@ def _mtime_iso(path: Path) -> str:
     from datetime import datetime, timezone
     ts = path.stat().st_mtime
     return datetime.fromtimestamp(ts, timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _asset_counts(assets_dir: Path) -> dict[str, int]:
+    """Immediate subfolders of the asset library -> count of files directly inside."""
+    out: dict[str, int] = {}
+    if not assets_dir.is_dir():
+        return out
+    for child in sorted(assets_dir.iterdir()):
+        if child.is_dir():
+            out[child.name] = sum(1 for f in child.iterdir() if f.is_file())
+    return out
+
+
+def category_report(project: Project, config: Config) -> list[dict]:
+    """Per asset category: how many files are on hand, and which plan beats need it.
+
+    Merges the asset library's folders with every ``category``/``description``
+    pair found in this project's ``renders/*.plan.json`` beats. A category a
+    plan references but the library has no folder for shows ``assets: 0``.
+    Categories the plans actually use are listed first.
+    """
+    counts = _asset_counts(config.assets_dir)
+    beats: dict[str, list[str]] = {}
+    if project.renders_dir.is_dir():
+        for plan_path in sorted(project.renders_dir.glob("*.plan.json")):
+            try:
+                data = json.loads(plan_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            for beat in data.get("beats", []) if isinstance(data, dict) else []:
+                cat = beat.get("category")
+                if not cat:
+                    continue
+                desc = (beat.get("description") or "").strip()
+                if desc and desc not in beats.setdefault(cat, []):
+                    beats[cat].append(desc)
+                beats.setdefault(cat, [])
+
+    rows = [
+        {"category": cat, "assets": counts.get(cat, 0), "beats": beats.get(cat, [])}
+        for cat in set(counts) | set(beats)
+    ]
+    rows.sort(key=lambda r: (not r["beats"], r["category"]))
+    return rows

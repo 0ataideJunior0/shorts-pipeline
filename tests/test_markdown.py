@@ -15,6 +15,7 @@ SPEC = IdeaSpec(
     slug="morning-routine",
     title="The 5am routine that changed everything",
     description="A three-step morning that fixed my focus. Try it tomorrow.",
+    tags=["morning routine", "5am club", "focus", "productivity"],
     hook="You are waking up wrong.",
     narration_script="Here is the routine.\nStep one: sunlight.",
     asset_categories=["sunrise", "coffee"],
@@ -36,6 +37,7 @@ def test_render_contains_template_parts():
     assert "asset_categories: [sunrise, coffee]" in md
     assert "- [ ] Approved" in md
     assert "## Description\n\nA three-step morning that fixed my focus." in md
+    assert "## Tags\n\nmorning routine, 5am club, focus, productivity\n" in md
     assert "## Hook" in md
     assert "## Narration" in md
     assert "Step one: sunlight." in md
@@ -50,6 +52,7 @@ def test_roundtrip_unapproved():
     assert parsed.approved is False
     assert parsed.narration == "Here is the routine.\nStep one: sunlight."
     assert parsed.description == "A three-step morning that fixed my focus. Try it tomorrow."
+    assert parsed.tags == "morning routine, 5am club, focus, productivity"
 
 
 def test_approved_detection():

@@ -13,6 +13,7 @@ IDEA_MD = (
     "---\nslug: 01-x\ntitle: old title\n---\n\n"
     "- [ ] Approved\n\n"
     "## Description\n\nold description\n\n"
+    "## Tags\n\nold, tags\n\n"
     "## Hook\n\nh\n\n"
     "## Narration\n\nold\n\n"
     "## Notes\n\nn\n"
@@ -20,7 +21,7 @@ IDEA_MD = (
 
 
 def _edit(md, **over):
-    kw = dict(title="t", description="d", narration="n", approved=False)
+    kw = dict(title="t", description="d", tags="a, b", narration="n", approved=False)
     kw.update(over)
     return apply_idea_edit(md, **kw)
 
@@ -30,11 +31,13 @@ def test_apply_idea_edit_sets_all_fields():
         IDEA_MD,
         title="New Title",
         description="A fresh caption for the short.",
+        tags="gta 6, rockstar, leonida",
         narration="new script",
         approved=True,
     )
     assert "title: New Title\n" in out
     assert "## Description\n\nA fresh caption for the short.\n" in out
+    assert "## Tags\n\ngta 6, rockstar, leonida\n" in out
     assert "## Narration\n\nnew script\n" in out
     assert "- [x] Approved" in out
     assert "## Hook\n\nh" in out
@@ -58,6 +61,15 @@ def test_apply_idea_edit_missing_description_section_raises():
     )
     with pytest.raises(EditError):
         _edit(no_desc)
+
+
+def test_apply_idea_edit_missing_tags_section_raises():
+    no_tags = (
+        "---\nslug: 01-x\ntitle: t\n---\n\n- [ ] Approved\n\n"
+        "## Description\n\nd\n\n## Narration\n\nx\n\n## Notes\n\nn\n"
+    )
+    with pytest.raises(EditError):
+        _edit(no_tags)
 
 
 def test_build_prompt_json_shape():

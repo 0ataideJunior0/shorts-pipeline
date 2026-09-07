@@ -9,6 +9,7 @@ class IdeaSpec:
     slug: str
     title: str
     description: str
+    tags: list[str]
     hook: str
     narration_script: str
     asset_categories: list[str]
@@ -34,6 +35,8 @@ def render_idea(idea: IdeaSpec, index: int) -> str:
         "- [ ] Approved\n\n"
         "## Description\n\n"
         f"{idea.description.strip()}\n\n"
+        "## Tags\n\n"
+        f"{', '.join(t.strip() for t in idea.tags if t.strip())}\n\n"
         "## Hook\n\n"
         f"{idea.hook.strip()}\n\n"
         "## Narration\n\n"
@@ -49,6 +52,7 @@ class ParsedIdea:
     approved: bool
     narration: str
     description: str
+    tags: str
     frontmatter: dict
 
 
@@ -87,6 +91,7 @@ def parse_idea_file(text: str) -> ParsedIdea:
         approved=approved,
         narration=_section(text, "Narration"),
         description=_section(text, "Description"),
+        tags=_section(text, "Tags"),
         frontmatter=frontmatter,
     )
 

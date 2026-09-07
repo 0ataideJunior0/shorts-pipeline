@@ -59,6 +59,7 @@ _IDEAS_SCHEMA = {
                     "slug": {"type": "string"},
                     "title": {"type": "string"},
                     "description": {"type": "string"},
+                    "tags": {"type": "array", "items": {"type": "string"}},
                     "hook": {"type": "string"},
                     "narration_script": {"type": "string"},
                     "asset_categories": {
@@ -70,7 +71,7 @@ _IDEAS_SCHEMA = {
                     "est_duration_sec": {"type": "integer"},
                 },
                 "required": [
-                    "slug", "title", "description", "hook", "narration_script",
+                    "slug", "title", "description", "tags", "hook", "narration_script",
                     "asset_categories", "source_start", "source_end",
                     "est_duration_sec",
                 ],
@@ -89,7 +90,9 @@ _STRUCTURAL_SUFFIX = (
     "video. slug is 2-4 lowercase words joined by hyphens, with no numeric "
     "prefix. title is the short's headline. description is a 1-3 sentence "
     "publish caption for the short, written for the viewer, in the same "
-    "language as the narration."
+    "language as the narration. tags is a short list (5-12) of YouTube upload "
+    "tags for the short: plain keywords or short phrases, no '#', in the "
+    "narration's language."
 )
 
 
@@ -131,6 +134,7 @@ def generate_ideas(
                 slug=item["slug"],
                 title=item["title"],
                 description=item["description"],
+                tags=list(item["tags"]),
                 hook=item["hook"],
                 narration_script=item["narration_script"],
                 asset_categories=list(item["asset_categories"]),

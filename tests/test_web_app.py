@@ -37,7 +37,8 @@ def _idea_md(slug, narration, approved=False):
     box = "x" if approved else " "
     return (
         f"---\nslug: {slug}\ntitle: Demo Idea\n---\n\n"
-        f"- [{box}] Approved\n\n## Description\n\nold caption\n\n## Hook\n\nh\n\n"
+        f"- [{box}] Approved\n\n## Description\n\nold caption\n\n"
+        f"## Tags\n\nold, tags\n\n## Hook\n\nh\n\n"
         f"## Narration\n\n{narration}\n\n## Notes\n\nn\n"
     )
 
@@ -128,6 +129,7 @@ def test_put_idea_updates_md(client):
         json={
             "title": "Renamed short",
             "description": "A punchier caption.",
+            "tags": "gta 6, rockstar, leonida",
             "narration": "rewritten narration",
             "approved": False,
         },
@@ -136,12 +138,61 @@ def test_put_idea_updates_md(client):
     md = project.idea_file("01-x").read_text()
     assert "title: Renamed short\n" in md
     assert "## Description\n\nA punchier caption.\n" in md
+    assert "## Tags\n\ngta 6, rockstar, leonida\n" in md
     assert "rewritten narration" in md
     assert "- [ ] Approved" in md
     assert "## Notes\n\nn" in md
     idea = resp.get_json()["ideas"][0]
     assert idea["title"] == "Renamed short"
     assert idea["description"] == "A punchier caption."
+    assert idea["tags"] == "gta 6, rockstar, leonida"
+
+
+def test_put_approved_toggles_only_the_checkbox(client):
+    c, _, project = client
+    before = project.idea_file("01-x").read_text()
+    assert "- [x] Approved" in before
+    resp = c.put("/api/projects/demo/ideas/01-x/approved", json={"approved": False})
+    assert resp.status_code == 200
+    md = project.idea_file("01-x").read_text()
+    assert "- [ ] Approved" in md
+    assert "the script" in md  # narration untouched
+    assert "title: Demo Idea" in md
+    assert resp.get_json()["ideas"][0]["approved"] is False
+
+
+def test_put_approved_unknown_idea_404(client):
+    c, _, _ = client
+    assert c.put("/api/projects/demo/ideas/99-nope/approved",
+                 json={"approved": True}).status_code == 404
+
+
+def test_voice_route_serves_and_404s(client):
+    c, _, project = client
+    assert c.get("/api/projects/demo/voice/01-x").status_code == 404
+    project.voice_file("01-x").write_bytes(b"ID3fake-mp3-bytes")
+    resp = c.get("/api/projects/demo/voice/01-x")
+    assert resp.status_code == 200
+    assert resp.mimetype == "audio/mpeg"
+    assert resp.data == b"ID3fake-mp3-bytes"
+
+
+def test_categories_route(client):
+    c, cfg, project = client
+    (cfg.assets_dir / "neon").mkdir()
+    (cfg.assets_dir / "neon" / "a.mp4").write_bytes(b"x")
+    (cfg.assets_dir / "neon" / "b.mp4").write_bytes(b"x")
+    project.plan_file("01-x").write_text(json.dumps({
+        "beats": [{"category": "neon", "description": "neon skyline"},
+                  {"category": "swamp", "description": "misty swamp"}]
+    }))
+    rows = c.get("/api/projects/demo/categories").get_json()
+    by = {r["category"]: r for r in rows}
+    assert by["neon"]["assets"] == 2
+    assert by["neon"]["beats"] == ["neon skyline"]
+    assert by["swamp"]["assets"] == 0  # referenced by a beat, no folder
+    # categories a plan needs come before folder-only ones
+    assert [r["category"] for r in rows][:2] == ["neon", "swamp"]
 
 
 def test_put_idea_unknown_slug_404(client):

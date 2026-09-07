@@ -10,11 +10,18 @@ class EditError(Exception):
 
 
 def apply_idea_edit(
-    md_text: str, *, title: str, description: str, narration: str, approved: bool
+    md_text: str,
+    *,
+    title: str,
+    description: str,
+    tags: str,
+    narration: str,
+    approved: bool,
 ) -> str:
     try:
         out = set_frontmatter_value(md_text, "title", title)
         out = replace_section(out, "Description", description)
+        out = replace_section(out, "Tags", tags)
         out = replace_section(out, "Narration", narration)
         return set_approved(out, approved)
     except ValueError as exc:

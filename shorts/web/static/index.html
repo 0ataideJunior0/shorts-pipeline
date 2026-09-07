@@ -149,6 +149,7 @@
   .frow .fr.fresh { color:var(--ok); }
   .frow .fr.stale { color:var(--run); }
   .field-lbl { display:block; margin:.6rem 0 .15rem; font:11px var(--mono); color:var(--ink-dim); }
+  .card .tags-in { width:100%; font:12.5px var(--mono); padding:7px 9px; }
   .tabs { display:flex; gap:0; margin:.7rem 0 0; border-bottom:1px solid var(--line); }
   .tab {
     appearance:none; background:none; border:0; cursor:pointer;
@@ -215,6 +216,31 @@
   }
   @keyframes track { 0% { left:-32%; } 100% { left:100%; } }
 
+  /* ---- idea card audio ---- */
+  .card audio { width:100%; height:34px; margin:.5rem 0 0; display:block; }
+
+  /* ---- assets panel ---- */
+  .assets summary { font-size:13px; font-weight:600; cursor:pointer; }
+  .assets .hint { margin:.35rem 0 .6rem; font-size:12.5px; color:var(--ink-dim); }
+  .cat { border:1px solid var(--line); border-radius:6px; padding:9px 11px; margin:.45rem 0; }
+  .cat-head { display:flex; align-items:baseline; gap:.6rem; }
+  .cat-head .nm { font:13px var(--mono); font-weight:600; }
+  .cat-head .n { font:11.5px var(--mono); color:var(--ink-dim); margin-left:auto; }
+  .cat-head .n.empty { color:var(--fail); }
+  .cat ul { margin:.4rem 0 0; padding-left:1.1rem; }
+  .cat li { font-size:12.5px; color:var(--ink-dim); margin:.15rem 0; }
+
+  /* ---- toasts ---- */
+  #toasts { position:fixed; right:14px; bottom:14px; z-index:20; display:flex; flex-direction:column; gap:.4rem; }
+  .toast {
+    background:var(--panel); color:var(--ink); border:1px solid var(--line);
+    border-left:3px solid var(--ok); border-radius:6px; padding:8px 12px;
+    font-size:12.5px; box-shadow:0 8px 20px -10px rgba(0,0,0,.5);
+    animation:toast-in .18s ease-out;
+  }
+  .toast.err { border-left-color:var(--fail); }
+  @keyframes toast-in { from { opacity:0; transform:translateY(6px); } }
+
   @media (max-width:680px) {
     .strip { grid-template-columns:1fr; }
     .seg { flex-direction:row; align-items:center; gap:.6rem; min-height:0; padding:10px 12px; }
@@ -226,6 +252,7 @@
     .seg.flash-ok, .seg.flash-fail { animation:none; }
     .mon-head .live::before { animation:none; }
     #bar::after { animation:none; left:0; width:100%; }
+    .toast { animation:none; }
   }
 </style>
 
@@ -242,6 +269,7 @@
   </section>
 </div>
 <div id="bar" hidden></div>
+<div id="toasts"></div>
 
 <script>
 const $ = (sel, el = document) => el.querySelector(sel);
@@ -270,6 +298,13 @@ function fmt(ms) {
   const s = Math.max(0, Math.floor(ms / 1000));
   return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
 }
+function toast(msg, kind) {
+  const el = document.createElement("div");
+  el.className = "toast" + (kind === "err" ? " err" : "");
+  el.textContent = msg;
+  $("#toasts").appendChild(el);
+  setTimeout(() => el.remove(), kind === "err" ? 4000 : 2500);
+}
 
 let state = null;
 let currentProject = null;
@@ -278,6 +313,8 @@ let pending = false;      // Run clicked, waiting for the stream to confirm
 let startedAt = 0;        // ms epoch of the running/pending job
 let lastLine = "";        // most recent non-empty log line, for the deck tail
 let ticker = null;
+let poller = null;        // fallback GET /api/jobs/current while a job is believed running
+let assetsOpen = false;   // keep the Assets panel open across re-renders
 const creating = new Set();
 
 function jobHereRunning() {
@@ -395,12 +432,20 @@ function render() {
 
     <div class="head"><b>Ideas</b><span class="fill"></span></div>
     ${s.ideas.map(ideaCard).join("") ||
-      `<p class="muted">No ideas yet. Run ideate to generate them.</p>`}`;
+      `<p class="muted">No ideas yet. Run ideate to generate them.</p>`}
+
+    <div class="head"><b>Assets</b><span class="fill"></span></div>
+    <details class="assets" ${assetsOpen ? "open" : ""}>
+      <summary>Categories &amp; coverage</summary>
+      <p class="hint">Footage each plan beat asks for, and how many files are on hand.</p>
+      <div id="cats" class="muted">Open to load.</div>
+    </details>`;
 
   setBusy(runningHere || pending);
   syncMonitor(runningHere);
-  if (runningHere || pending) startTicker(); else stopTicker();
+  if (runningHere || pending) { startTicker(); ensurePoller(); } else stopTicker();
   wire();
+  if (assetsOpen) loadCategories();
 }
 
 function segment(st, i, runningHere) {
@@ -470,14 +515,21 @@ function ideaCard(idea) {
        </div>`
     : "";
 
+  const audio = idea.voice !== "missing"
+    ? `<audio controls preload="none" src="/api/projects/${encodeURIComponent(state.name)}/voice/${encodeURIComponent(idea.slug)}?h=${encodeURIComponent(idea.voice_hash || "")}"></audio>`
+    : "";
+
   return `<div class="card" data-slug="${escapeHtml(idea.slug)}">
     <div class="card-top">
       <input class="title-in" value="${escapeHtml(idea.title)}" aria-label="video title">
       <label class="approve"><input type="checkbox" class="approved" ${idea.approved ? "checked" : ""}> approved</label>
       <span class="frow">${fr("voice")}${fr("plan")}${fr("render")}</span>
     </div>
+    ${audio}
     <label class="field-lbl">description</label>
     <textarea class="desc-in" rows="2">${escapeHtml(idea.description || "")}</textarea>
+    <label class="field-lbl">tags &nbsp;<span class="muted">comma-separated, for the YouTube upload</span></label>
+    <input class="tags-in" value="${escapeHtml(idea.tags || "")}" aria-label="youtube tags">
     <button class="btn save-idea">Save idea</button>
     ${tabs}
     <textarea class="narration" rows="5" ${showPlan ? "hidden" : ""}>${escapeHtml(idea.narration)}</textarea>
@@ -497,7 +549,7 @@ async function runStage(stage, force) {
   } catch (err) {
     pending = false;
     render();
-    alert(err.message);
+    toast(err.message, "err");
   }
 }
 
@@ -511,7 +563,7 @@ function wire() {
   const stop = $("#stop");
   if (stop) stop.onclick = () => {
     stop.disabled = true;
-    api("POST", "/api/jobs/current/cancel").catch((e) => { stop.disabled = false; alert(e.message); });
+    api("POST", "/api/jobs/current/cancel").catch((e) => { stop.disabled = false; toast(e.message, "err"); });
   };
 
   $("#save-prompt").onclick = async () => {
@@ -519,7 +571,14 @@ function wire() {
       state = await api("PUT", `/api/projects/${encodeURIComponent(state.name)}/prompt`,
         { prompt: $("#prompt").value });
       render();
-    } catch (err) { alert(err.message); }
+      toast("Brief saved");
+    } catch (err) { toast(err.message, "err"); }
+  };
+
+  const cats = $(".assets");
+  if (cats) cats.ontoggle = () => {
+    assetsOpen = cats.open;
+    if (cats.open) loadCategories();
   };
 
   document.querySelectorAll(".card").forEach((card) => {
@@ -528,16 +587,31 @@ function wire() {
       ideaView.set(slug, t.dataset.view);
       render();
     });
+    $(".approved", card).onchange = async (e) => {
+      const want = e.target.checked;
+      try {
+        state = await api("PUT",
+          `/api/projects/${encodeURIComponent(state.name)}/ideas/${encodeURIComponent(slug)}/approved`,
+          { approved: want });
+        render();
+        toast(want ? "Marked approved" : "Marked not approved");
+      } catch (err) {
+        e.target.checked = !want;
+        toast(err.message, "err");
+      }
+    };
     $(".save-idea", card).onclick = async () => {
       try {
         state = await api("PUT", `/api/projects/${encodeURIComponent(state.name)}/ideas/${encodeURIComponent(slug)}`, {
           title: $(".title-in", card).value,
           description: $(".desc-in", card).value,
+          tags: $(".tags-in", card).value,
           narration: $(".narration", card).value,
           approved: $(".approved", card).checked,
         });
         render();
-      } catch (err) { alert(err.message); }
+        toast("Idea saved");
+      } catch (err) { toast(err.message, "err"); }
     };
     const sp = $(".save-plan", card);
     if (sp) sp.onclick = async () => {
@@ -547,9 +621,48 @@ function wire() {
           plan: $(".plan", card).value,
         });
         render();
+        toast("Plan saved");
       } catch (err) { $(".plan-err", card).textContent = err.message; }
     };
   });
+}
+
+async function loadCategories() {
+  const box = $("#cats");
+  if (!box) return;
+  box.textContent = "Loading…";
+  let rows;
+  try { rows = await api("GET", `/api/projects/${encodeURIComponent(state.name)}/categories`); }
+  catch (err) { box.textContent = err.message; return; }
+  if (!rows.length) { box.textContent = "No asset folders or plan categories yet."; return; }
+  box.classList.remove("muted");
+  box.innerHTML = rows.map((r) => {
+    const n = r.assets === 1 ? "1 file" : `${r.assets} files`;
+    const need = r.assets === 0 && r.beats.length ? " empty" : "";
+    const list = r.beats.length
+      ? `<ul>${r.beats.map((b) => `<li>${escapeHtml(b)}</li>`).join("")}</ul>`
+      : `<p class="hint" style="margin:.35rem 0 0">Not used by any plan yet.</p>`;
+    return `<div class="cat">
+      <div class="cat-head"><span class="nm">${escapeHtml(r.category)}</span>
+        <span class="n${need}">${n}</span></div>
+      ${list}
+    </div>`;
+  }).join("");
+}
+
+/* ---------- poll fallback: catch a job that ended while SSE was reconnecting ---------- */
+function ensurePoller() {
+  if (poller) return;
+  poller = setInterval(async () => {
+    if (!pending && !jobHereRunning()) { clearInterval(poller); poller = null; return; }
+    try {
+      const j = await api("GET", "/api/jobs/current");
+      if (!j.running && (pending || jobHereRunning())) {
+        pending = false;
+        if (currentProject) loadProject(currentProject);
+      }
+    } catch { /* transient; try again next tick */ }
+  }, 4000);
 }
 
 /* ---------- elapsed timer ---------- */
@@ -604,12 +717,17 @@ es.onmessage = (e) => {
     if (ev.started_at) startedAt = Date.parse(ev.started_at) || startedAt;
     if (currentProject) loadProject(currentProject);
   } else if (ev.state === "exited") {
-    const ok = ev.returncode === 0;
-    const runStage = state && state.job ? state.job.stage : null;
-    log.textContent += `\n— ${ok ? "finished" : `failed · exit ${ev.returncode}`} in ${fmt(Date.now() - startedAt)} —\n`;
-    log.scrollTop = log.scrollHeight;
-    $(".mon-when").textContent = ok ? `done in ${fmt(Date.now() - startedAt)}` : `failed · exit ${ev.returncode}`;
-    if (runStage) flashSegment(runStage, ok);
+    // only narrate if we were actually tracking this run — a replayed `exited`
+    // on a fresh page load should just reconcile, silently
+    const wasTracking = pending || jobHereRunning();
+    if (wasTracking) {
+      const ok = ev.returncode === 0;
+      const runStage = state && state.job ? state.job.stage : null;
+      log.textContent += `\n— ${ok ? "finished" : `failed · exit ${ev.returncode}`} in ${fmt(Date.now() - startedAt)} —\n`;
+      log.scrollTop = log.scrollHeight;
+      $(".mon-when").textContent = ok ? `done in ${fmt(Date.now() - startedAt)}` : `failed · exit ${ev.returncode}`;
+      if (runStage) flashSegment(runStage, ok);
+    }
     pending = false;
     armed = null;
     stopTicker();
@@ -617,6 +735,11 @@ es.onmessage = (e) => {
   } else if (ev.state === "idle") {
     setBusy(false);
     $(".live").hidden = true;
+    // a job finished while the stream was reconnecting and we missed `exited`
+    if (pending || jobHereRunning()) {
+      pending = false;
+      if (currentProject) loadProject(currentProject);
+    }
   }
 };
 es.onerror = () => {

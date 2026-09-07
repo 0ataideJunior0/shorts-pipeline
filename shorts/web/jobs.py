@@ -145,6 +145,7 @@ class JobRunner:
         q: queue.Queue = queue.Queue()
         with self._lock:
             job = self._job
+            finished = bool(job and job.returncode is not None)
             # Emit the status event FIRST so the frontend's "a newly-started job
             # clears the log" branch runs before the replayed buffer is appended
             # (otherwise a mid-job reload wipes the lines it just replayed).
@@ -154,11 +155,19 @@ class JobRunner:
                     "stage": job.stage, "project": job.project,
                     "started_at": job.started_at,
                 })
-            else:
+            elif not finished:
                 q.put({"type": "status", "state": "idle"})
             if job:
                 for line in list(job.lines):
                     q.put({"type": "line", "text": line})
+            if finished:
+                # Replay the outcome so a listener that connected after the live
+                # `exited` broadcast (e.g. across an SSE reconnect) still learns
+                # the job ended — otherwise the UI stays stuck "running".
+                q.put({
+                    "type": "status", "state": "exited",
+                    "returncode": job.returncode, "finished_at": job.finished_at,
+                })
             self._listeners.append(q)
         return q
 
