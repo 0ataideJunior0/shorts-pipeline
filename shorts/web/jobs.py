@@ -24,8 +24,22 @@ class JobBusy(Exception):
 
 
 def stage_argv(
-    stage: str, name: str, *, url: str | None = None, force: bool = False
+    stage: str,
+    name: str,
+    *,
+    url: str | None = None,
+    force: bool = False,
+    slugs: list[str] | None = None,
 ) -> list[str]:
+    if stage == "publish":
+        argv = ["publish", name]
+        for s in slugs or []:
+            argv += ["--slug", s]
+        if force:
+            argv.append("--force")
+        return argv
+    if stage == "youtube-auth":
+        return ["youtube", "auth"]
     if stage not in ALLOWED_STAGES:
         raise ValueError(f"unknown stage: {stage}")
     if stage == "fetch":
