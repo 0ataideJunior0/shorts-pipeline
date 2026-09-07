@@ -83,3 +83,25 @@ def parse_idea_file(text: str) -> ParsedIdea:
         narration=_section(text, "Narration"),
         frontmatter=frontmatter,
     )
+
+
+def replace_section(text: str, name: str, new_body: str) -> str:
+    """Replace the body under ``## <name>`` with ``new_body`` (stripped)."""
+    pattern = re.compile(
+        rf"(^##\s+{re.escape(name)}\s*$\n\n)(.*?)(?=^##\s+|\Z)",
+        re.DOTALL | re.MULTILINE,
+    )
+    if not pattern.search(text):
+        raise ValueError(f"no '## {name}' section")
+    return pattern.sub(
+        lambda m: m.group(1) + new_body.strip() + "\n\n", text
+    )
+
+
+def set_approved(text: str, approved: bool) -> str:
+    """Set the ``- [ ] Approved`` / ``- [x] Approved`` checkbox."""
+    box = "x" if approved else " "
+    new_text, count = _APPROVED_RE.subn(f"- [{box}] Approved", text, count=1)
+    if count == 0:
+        raise ValueError("no '- [ ] Approved' line")
+    return new_text

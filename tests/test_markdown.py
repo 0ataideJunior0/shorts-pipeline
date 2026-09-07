@@ -4,6 +4,8 @@ from shorts.markdown import (
     parse_idea_file,
     prefixed_slug,
     render_idea,
+    replace_section,
+    set_approved,
 )
 
 SPEC = IdeaSpec(
@@ -64,3 +66,54 @@ def test_missing_frontmatter():
     assert parsed.slug == ""
     assert parsed.frontmatter == {}
     assert parsed.narration == "hi"
+
+
+IDEA_MD = (
+    "---\nslug: 01-x\ntitle: T\n---\n\n"
+    "- [ ] Approved\n\n"
+    "## Hook\n\nthe hook\n\n"
+    "## Narration\n\nold narration\nsecond line\n\n"
+    "## Notes\n\nkeep me\n"
+)
+
+
+def test_replace_section_swaps_only_that_section():
+    out = replace_section(IDEA_MD, "Narration", "brand new script")
+    assert "## Narration\n\nbrand new script\n" in out
+    assert "old narration" not in out
+    assert "## Hook\n\nthe hook" in out
+    assert "## Notes\n\nkeep me" in out
+    assert out.startswith("---\nslug: 01-x")
+
+
+def test_replace_section_strips_body_and_is_idempotent():
+    once = replace_section(IDEA_MD, "Narration", "  padded  ")
+    twice = replace_section(once, "Narration", "padded")
+    assert once == twice
+    assert "\n\npadded\n\n## Notes" in once
+
+
+def test_replace_section_last_section_at_eof():
+    out = replace_section(IDEA_MD, "Notes", "new notes")
+    assert out.rstrip().endswith("## Notes\n\nnew notes")
+
+
+def test_replace_section_missing_raises():
+    import pytest
+    with pytest.raises(ValueError):
+        replace_section(IDEA_MD, "Nonexistent", "x")
+
+
+def test_set_approved_toggles_checkbox():
+    approved = set_approved(IDEA_MD, True)
+    assert "- [x] Approved" in approved
+    assert "- [ ] Approved" not in approved
+    back = set_approved(approved, False)
+    assert "- [ ] Approved" in back
+    assert "- [x] Approved" not in back
+
+
+def test_set_approved_missing_raises():
+    import pytest
+    with pytest.raises(ValueError):
+        set_approved("no checkbox here", True)
