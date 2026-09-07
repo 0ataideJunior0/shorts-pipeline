@@ -364,6 +364,20 @@ def test_put_cadence_bad_start_422(client):
                  json={"start": "not-a-date"}).status_code == 422
 
 
+def test_put_cadence_weekdays_scalar_is_422_not_500(client):
+    c, _, _ = client
+    r = c.put("/api/projects/demo/publish/cadence",
+              json={"start": "2026-09-14T09:00:00Z", "weekdays": 5})
+    assert r.status_code == 422
+
+
+def test_put_cadence_weekdays_bool_is_422(client):
+    c, _, _ = client
+    r = c.put("/api/projects/demo/publish/cadence",
+              json={"start": "2026-09-14T09:00:00Z", "weekdays": [True]})
+    assert r.status_code == 422
+
+
 def test_put_publish_at(client):
     c, _, project = client
     r = c.put("/api/projects/demo/ideas/01-x/publish-at", json={"publish_at": "2026-10-01T12:00:00Z"})

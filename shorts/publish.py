@@ -7,7 +7,7 @@ from googleapiclient.errors import HttpError
 
 from shorts.ideas import sync_idea_state
 from shorts.markdown import parse_idea_file
-from shorts.project import Manifest, sha256_file, utcnow_iso
+from shorts.project import Manifest, utcnow_iso
 from shorts.stages.plan import plan_opts_hash, subtitle_plan_args
 from shorts.youtube import get_credentials, insert_video, youtube_service
 
@@ -59,6 +59,7 @@ def resolve_schedule(
     overrides: dict[str, datetime],
     cadence: dict | None,
     taken: set[datetime],
+    not_before: datetime | None = None,
 ) -> dict[str, datetime | None]:
     used = set(taken)
     out: dict[str, datetime | None] = {}
@@ -66,6 +67,11 @@ def resolve_schedule(
     start = cadence["start"] if cadence else None
     interval = timedelta(hours=cadence["interval_hours"]) if cadence else None
     weekdays = cadence["weekdays"] if cadence else None
+    if start is not None and not_before is not None:
+        delta = (not_before - start) / interval  # timedelta / timedelta -> float
+        if delta >= 0:
+            k = int(delta) + 1  # first grid slot strictly after not_before
+    stop = k + _K_CAP
     for slug in slugs:
         if slug in overrides:
             out[slug] = overrides[slug]
@@ -75,7 +81,7 @@ def resolve_schedule(
             out[slug] = None
             continue
         chosen = None
-        while k < _K_CAP:
+        while k < stop:
             slot = start + interval * k
             k += 1
             if slot in used:
@@ -118,6 +124,15 @@ def run(project, config, *, slugs: list[str] | None = None, force: bool = False)
             return False
         return idea_freshness(project, s, manifest, opts_hash)["render"] == "fresh"
 
+    # Full pending set, computed the same way as web.state.publish_queue's
+    # slot_slugs: approved + fresh render + not yet uploaded. Independent of the
+    # --slug filter and of force, so a per-row upload lands on the same slot the
+    # web queue previewed for that slug.
+    pending = [
+        s for s in all_slugs
+        if eligible(s) and not manifest.get_idea(s).get("youtube")
+    ]
+
     candidates = [s for s in all_slugs if eligible(s)]
     if slugs:
         want = set(slugs)
@@ -144,18 +159,25 @@ def run(project, config, *, slugs: list[str] | None = None, force: bool = False)
             taken.add(parse_iso(yt["publish_at"]))
 
     schedule = resolve_schedule(
-        candidates,
-        {s: overrides[s] for s in candidates if s in overrides},
+        pending,
+        {s: overrides[s] for s in pending if s in overrides},
         cadence_from_manifest(manifest.get_publish()),
         taken,
+        not_before=datetime.now(timezone.utc),
     )
 
     uploaded = failed = 0
     for s in candidates:
+        if not project.idea_file(s).exists():
+            print(f"publish: {s} FAILED - no idea file")
+            failed += 1
+            continue
         parsed = parse_idea_file(project.idea_file(s).read_text(encoding="utf-8"))
-        at = schedule[s]
+        # explicit per-idea publish_at always wins, even for forced re-uploads
+        # (which are absent from `pending`, hence from `schedule`)
+        at = overrides.get(s) or schedule.get(s)
         body = build_video_body(
-            title=parsed.frontmatter.get("title", s),
+            title=parsed.frontmatter.get("title") or s,
             description=parsed.description,
             tags=parsed.tags,
             category_id=config.youtube.category_id,
@@ -171,6 +193,10 @@ def run(project, config, *, slugs: list[str] | None = None, force: bool = False)
             if status == 403 and "quota" in reason.lower():
                 print(f"publish: quota exhausted - {uploaded} uploaded, rest deferred")
                 break
+            continue
+        except Exception as exc:  # a batch must not die on one un-typed upload error
+            print(f"publish: {s} FAILED {exc}")
+            failed += 1
             continue
         manifest.set_idea(s, youtube={
             "video_id": res["video_id"],

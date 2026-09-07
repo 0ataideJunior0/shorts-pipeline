@@ -80,7 +80,49 @@ def test_resolve_schedule_impossible_filter_hits_cap():
     assert resolve_schedule(["a"], {}, cad, set()) == {"a": None}
 
 
-import json as _json
+def test_resolve_schedule_not_before_after_start_is_strictly_after_and_on_grid():
+    start = datetime(2026, 9, 10, 9, 0, tzinfo=UTC)
+    cad = {"start": start, "interval_hours": 24, "weekdays": None}
+    not_before = datetime(2026, 9, 12, 15, 0, tzinfo=UTC)  # between k=2 and k=3
+    out = resolve_schedule(["a"], {}, cad, set(), not_before=not_before)
+    assert out["a"] == datetime(2026, 9, 13, 9, 0, tzinfo=UTC)  # k=3
+    assert out["a"] > not_before
+    assert (out["a"] - start) % timedelta(hours=24) == timedelta(0)
+
+
+def test_resolve_schedule_not_before_on_a_grid_point_skips_to_next_slot():
+    start = datetime(2026, 9, 10, 9, 0, tzinfo=UTC)
+    cad = {"start": start, "interval_hours": 24, "weekdays": None}
+    not_before = datetime(2026, 9, 12, 9, 0, tzinfo=UTC)  # exactly k=2
+    out = resolve_schedule(["a"], {}, cad, set(), not_before=not_before)
+    assert out["a"] == datetime(2026, 9, 13, 9, 0, tzinfo=UTC)  # strictly after
+
+
+def test_resolve_schedule_not_before_before_start_behaves_like_none():
+    start = datetime(2026, 9, 10, 9, 0, tzinfo=UTC)
+    cad = {"start": start, "interval_hours": 24, "weekdays": None}
+    not_before = datetime(2026, 9, 1, 0, 0, tzinfo=UTC)
+    out = resolve_schedule(["a", "b"], {}, cad, set(), not_before=not_before)
+    assert out["a"] == start
+    assert out["b"] == start + timedelta(days=1)
+
+
+def test_resolve_schedule_stale_small_interval_still_returns_future_slot():
+    # cadence started years ago with a 1h interval: a naive k=0 walk would blow
+    # past _K_CAP and wrongly yield None. closed-form k must land on a real slot.
+    start = datetime(2020, 1, 1, 0, 0, tzinfo=UTC)
+    cad = {"start": start, "interval_hours": 1, "weekdays": None}
+    not_before = datetime(2026, 9, 7, 12, 30, tzinfo=UTC)
+    out = resolve_schedule(["a"], {}, cad, set(), not_before=not_before)
+    assert out["a"] == datetime(2026, 9, 7, 13, 0, tzinfo=UTC)
+    assert out["a"] > not_before
+
+
+def test_resolve_schedule_not_before_none_is_unchanged():
+    start = datetime(2020, 1, 1, 0, 0, tzinfo=UTC)
+    cad = {"start": start, "interval_hours": 24, "weekdays": None}
+    assert resolve_schedule(["a"], {}, cad, set(), not_before=None) == {"a": start}
+
 
 from shorts.project import Manifest, Project
 
@@ -225,3 +267,77 @@ def test_run_isolates_per_idea_failure(tmp_path, monkeypatch):
     back = Manifest.load(project.manifest_path)
     assert "youtube" not in back.get_idea("01-x")
     assert back.get_idea("02-y")["youtube"]["video_id"] == "v2"
+
+
+def test_run_slug_upload_matches_web_queue_preview(tmp_path, monkeypatch):
+    # T19: `publish <n> --slug 02-y` must land on the slot the web queue previewed
+    # for 02-y (k=1), not `start` (k=0).
+    cfg = _cfg(tmp_path)
+    project = _mk_project(tmp_path, cfg)
+    _fresh_rendered_idea(project, "01-x", "First")
+    _fresh_rendered_idea(project, "02-y", "Second")
+
+    m = Manifest.load(project.manifest_path)
+    m.set_publish(start="2026-09-20T09:00:00Z", interval_hours=24, weekdays=None)
+    m.save(project.manifest_path)
+
+    from shorts.web.state import publish_queue
+    preview = {it["slug"]: it["publish_at"] for it in publish_queue(project, cfg)["items"]}
+    assert preview["02-y"] == "2026-09-21T09:00:00Z"
+
+    import shorts.publish as pub
+    monkeypatch.setattr(pub, "get_credentials", lambda c: object())
+    monkeypatch.setattr(pub, "youtube_service", lambda c: object())
+    seen = []
+    def fake_insert(service, *, mp4_path, body):
+        seen.append((mp4_path.name, body["status"].get("publishAt")))
+        return {"video_id": "v", "url": "https://youtu.be/v"}
+    monkeypatch.setattr(pub, "insert_video", fake_insert)
+
+    pub.run(project, cfg, slugs=["02-y"])
+
+    assert [s[0] for s in seen] == ["02-y.mp4"]
+    assert seen[0][1] == "2026-09-21T09:00:00Z"
+    back = Manifest.load(project.manifest_path)
+    assert back.get_idea("02-y")["youtube"]["publish_at"] == preview["02-y"]
+
+
+def test_run_missing_idea_file_fails_that_slug_only(tmp_path, monkeypatch):
+    # I3: a deleted idea .md must not abort the batch with a traceback.
+    cfg = _cfg(tmp_path)
+    project = _mk_project(tmp_path, cfg)
+    _fresh_rendered_idea(project, "01-x")
+    _fresh_rendered_idea(project, "02-y")
+    project.idea_file("01-x").unlink()
+
+    import shorts.publish as pub
+    monkeypatch.setattr(pub, "get_credentials", lambda c: object())
+    monkeypatch.setattr(pub, "youtube_service", lambda c: object())
+    seen = []
+    monkeypatch.setattr(pub, "insert_video", lambda *a, **k: seen.append(k["body"])
+                        or {"video_id": "v2", "url": "https://youtu.be/v2"})
+
+    with pytest.raises(SystemExit):
+        pub.run(project, cfg)
+    back = Manifest.load(project.manifest_path)
+    assert "youtube" not in back.get_idea("01-x")
+    assert back.get_idea("02-y")["youtube"]["video_id"] == "v2"
+
+
+def test_run_blank_title_falls_back_to_slug(tmp_path, monkeypatch):
+    # I4: a present-but-blank frontmatter title must not reach YouTube as "".
+    cfg = _cfg(tmp_path)
+    project = _mk_project(tmp_path, cfg)
+    _fresh_rendered_idea(project, "01-x", title="")
+
+    import shorts.publish as pub
+    monkeypatch.setattr(pub, "get_credentials", lambda c: object())
+    monkeypatch.setattr(pub, "youtube_service", lambda c: object())
+    seen = []
+    def fake_insert(service, *, mp4_path, body):
+        seen.append(body["snippet"]["title"])
+        return {"video_id": "v", "url": "https://youtu.be/v"}
+    monkeypatch.setattr(pub, "insert_video", fake_insert)
+
+    pub.run(project, cfg)
+    assert seen == ["01-x"]

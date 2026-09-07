@@ -245,6 +245,9 @@ def list_projects(config: Config) -> list[dict]:
 
 
 def publish_queue(project: Project, config: Config) -> dict:
+    from datetime import datetime, timezone
+
+    # function-local on purpose: shorts.publish imports googleapiclient at module scope
     from shorts.publish import cadence_from_manifest, iso, parse_iso, resolve_schedule
 
     manifest = Manifest.load(project.manifest_path)
@@ -276,6 +279,7 @@ def publish_queue(project: Project, config: Config) -> dict:
         {s: overrides[s] for s in slot_slugs if s in overrides},
         cadence_from_manifest(manifest.get_publish()),
         taken,
+        not_before=datetime.now(timezone.utc),
     )
 
     items = []

@@ -150,6 +150,47 @@ def test_insert_video_retries_transient(tmp_path, monkeypatch):
     assert req.calls == 3
 
 
+class _FlakyConnRequest:
+    """next_chunk() raises ConnectionResetError `fail_times` times, then succeeds."""
+    def __init__(self, fail_times=0):
+        self.fail_times = fail_times
+        self.calls = 0
+
+    def next_chunk(self):
+        self.calls += 1
+        if self.fail_times > 0:
+            self.fail_times -= 1
+            raise ConnectionResetError("connection reset by peer")
+        return (None, {"id": "vid123"})
+
+
+def test_insert_video_retries_connection_error(tmp_path, monkeypatch):
+    import shorts.youtube as yt
+    monkeypatch.setattr(
+        "googleapiclient.http.MediaFileUpload", lambda *a, **k: object(), raising=False,
+    )
+    monkeypatch.setattr("googleapiclient.errors.HttpError", _FakeHttpError, raising=False)
+    monkeypatch.setattr(yt.time, "sleep", lambda _s: None)
+    mp4 = tmp_path / "v.mp4"; mp4.write_bytes(b"x")
+    req = _FlakyConnRequest(fail_times=2)
+    res = yt.insert_video(_FakeService(req), mp4_path=mp4, body={"snippet": {}})
+    assert res["video_id"] == "vid123"
+    assert req.calls == 3
+
+
+def test_insert_video_connection_error_exhausts_retries_and_reraises(tmp_path, monkeypatch):
+    import shorts.youtube as yt
+    monkeypatch.setattr(
+        "googleapiclient.http.MediaFileUpload", lambda *a, **k: object(), raising=False,
+    )
+    monkeypatch.setattr("googleapiclient.errors.HttpError", _FakeHttpError, raising=False)
+    monkeypatch.setattr(yt.time, "sleep", lambda _s: None)
+    mp4 = tmp_path / "v.mp4"; mp4.write_bytes(b"x")
+    with pytest.raises(ConnectionResetError):
+        yt.insert_video(_FakeService(_FlakyConnRequest(fail_times=99)),
+                        mp4_path=mp4, body={"snippet": {}}, max_retries=3)
+
+
 def test_insert_video_non_transient_reraises(tmp_path, monkeypatch):
     import shorts.youtube as yt
     monkeypatch.setattr(

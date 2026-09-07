@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import http.client
 import os
 import time
 from pathlib import Path
@@ -93,6 +94,12 @@ def insert_video(service, *, mp4_path: Path, body: dict, max_retries: int = 5) -
             _status, response = request.next_chunk()
         except HttpError as exc:
             if getattr(exc.resp, "status", None) in (500, 502, 503, 504) and tries < max_retries:
+                tries += 1
+                time.sleep(2 ** tries)
+                continue
+            raise
+        except (ConnectionError, TimeoutError, http.client.HTTPException):
+            if tries < max_retries:
                 tries += 1
                 time.sleep(2 ** tries)
                 continue

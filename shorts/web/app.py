@@ -265,6 +265,7 @@ def create_app(config: Config) -> Flask:
 
     @app.put("/api/projects/<name>/publish/cadence")
     def api_put_cadence(name: str):
+        # function-local on purpose: shorts.publish imports googleapiclient at module scope
         from shorts.publish import parse_iso
         try:
             project = _load_project(config, name)
@@ -288,7 +289,9 @@ def create_app(config: Config) -> Flask:
                 return _json_error(422, "interval_hours must be > 0")
             weekdays = body.get("weekdays")
             if weekdays is not None:
-                if not all(isinstance(d, int) and 1 <= d <= 7 for d in weekdays):
+                if not isinstance(weekdays, list) or not all(
+                    type(d) is int and 1 <= d <= 7 for d in weekdays
+                ):
                     return _json_error(422, "weekdays must be integers 1..7")
                 weekdays = list(weekdays) or None
             manifest.set_publish(start=str(start), interval_hours=interval, weekdays=weekdays)
@@ -297,6 +300,7 @@ def create_app(config: Config) -> Flask:
 
     @app.put("/api/projects/<name>/ideas/<slug>/publish-at")
     def api_put_publish_at(name: str, slug: str):
+        # function-local on purpose: shorts.publish imports googleapiclient at module scope
         from shorts.publish import parse_iso
         try:
             project = _load_project(config, name)

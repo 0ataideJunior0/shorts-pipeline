@@ -330,6 +330,7 @@ let lastLine = "";        // most recent non-empty log line, for the deck tail
 let ticker = null;
 let poller = null;        // fallback GET /api/jobs/current while a job is believed running
 let assetsOpen = false;   // keep the Assets panel open across re-renders
+let ytStatusCache = null; // cached GET /api/youtube/status; reset on project switch / reconnect
 const creating = new Set();
 
 function jobHereRunning() {
@@ -387,6 +388,7 @@ async function loadList() {
 
 /* ---------- one project ---------- */
 async function loadProject(name) {
+  ytStatusCache = null;
   try {
     state = await api("GET", `/api/projects/${encodeURIComponent(name)}`);
   } catch (err) {
@@ -685,7 +687,8 @@ async function loadPublish() {
   if (!box) return;
   let status, queue;
   try {
-    status = await api("GET", "/api/youtube/status");
+    if (!ytStatusCache) ytStatusCache = await api("GET", "/api/youtube/status");
+    status = ytStatusCache;
     queue = await api("GET", `/api/projects/${encodeURIComponent(state.name)}/publish`);
   } catch (err) { box.textContent = err.message; return; }
 
@@ -712,8 +715,10 @@ async function loadPublish() {
     ${queue.items.map(pubRow).join("") || `<p class="muted">No approved ideas.</p>`}
     <button class="btn btn-run" id="pub-all" ${queue.items.some(canUpload) ? "" : "disabled"}>Upload all pending</button>`;
 
-  $("#yt-connect").onclick = () =>
+  $("#yt-connect").onclick = () => {
     api("POST", "/api/youtube/auth").catch((e) => toast(e.message, "err"));
+    ytStatusCache = null;
+  };
   $("#cad-save").onclick = async () => {
     const start = fromLocalInput($("#cad-start").value);
     const weekdays = [...document.querySelectorAll(".wd-cb:checked")].map((c) => +c.value);
@@ -759,7 +764,7 @@ function pubRow(it) {
   if (it.youtube) chip = `<a class="chip up" href="https://www.youtube.com/watch?v=${encodeURIComponent(it.youtube.video_id)}">uploaded ↗</a>`;
   else if (it.render === "missing") chip = `<span class="chip bad">not rendered</span>`;
   else if (it.render === "stale") chip = `<span class="chip bad">stale render</span>`;
-  else if (it.publish_at) chip = `<span class="chip sched">scheduled ${escapeHtml(it.publish_at.slice(0, 16).replace("T", " "))}</span>`;
+  else if (it.publish_at) chip = `<span class="chip sched">scheduled ${escapeHtml(toLocalInput(it.publish_at).replace("T", " "))}</span>`;
   else chip = `<span class="chip">draft</span>`;
   const ovVal = toLocalInput(it.publish_at_override);
   const hint = !it.publish_at_override && it.publish_at ? ` title="cadence: ${escapeHtml(it.publish_at)}"` : "";
