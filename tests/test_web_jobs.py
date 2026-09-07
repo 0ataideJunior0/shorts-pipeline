@@ -1,0 +1,75 @@
+import sys
+import time
+
+import pytest
+
+from shorts.web.jobs import (
+    JobBusy, JobRunner, sse_format, stage_argv,
+)
+
+
+def test_stage_argv_variants():
+    assert stage_argv("ideate", "demo") == ["ideate", "demo"]
+    assert stage_argv("voice", "demo", force=True) == ["voice", "demo", "--force"]
+    assert stage_argv("fetch", "demo", url="http://x") == [
+        "fetch", "http://x", "--name", "demo",
+    ]
+    with pytest.raises(ValueError):
+        stage_argv("fetch", "demo")           # no url
+    with pytest.raises(ValueError):
+        stage_argv("bogus", "demo")
+
+
+def test_sse_format():
+    assert sse_format({"type": "line", "text": "hi"}) == 'data: {"type": "line", "text": "hi"}\n\n'
+
+
+def _drain(runner, timeout=5.0):
+    deadline = time.time() + timeout
+    while runner.running() and time.time() < deadline:
+        time.sleep(0.02)
+
+
+def test_runner_captures_output_and_exit_code(tmp_path):
+    runner = JobRunner(tmp_path)
+    runner.start("x", "demo", [sys.executable, "-c", "print('hello'); print('world')"])
+    _drain(runner)
+    st = runner.state()
+    assert st["returncode"] == 0
+    assert st["running"] is False
+    buffered = [e for e in _collect(runner) if e["type"] == "line"]
+    assert any(e["text"] == "hello" for e in buffered)
+    assert any(e["text"] == "world" for e in buffered)
+
+
+def _collect(runner):
+    q = runner.attach()
+    out = []
+    while not q.empty():
+        out.append(q.get_nowait())
+    runner.detach(q)
+    return out
+
+
+def test_runner_rejects_second_job(tmp_path):
+    runner = JobRunner(tmp_path)
+    runner.start("x", "demo", [sys.executable, "-c", "import time; time.sleep(2)"])
+    with pytest.raises(JobBusy):
+        runner.start("y", "demo", [sys.executable, "-c", "pass"])
+    runner.cancel()
+    _drain(runner)
+
+
+def test_runner_cancel_terminates(tmp_path):
+    runner = JobRunner(tmp_path)
+    runner.start("x", "demo", [sys.executable, "-c", "import time; time.sleep(30)"])
+    assert runner.running() is True
+    runner.cancel()
+    _drain(runner)
+    assert runner.running() is False
+    assert runner.state()["returncode"] != 0
+
+
+def test_cancel_with_nothing_running_raises(tmp_path):
+    with pytest.raises(JobBusy):
+        JobRunner(tmp_path).cancel()
