@@ -21,6 +21,8 @@ python -m shorts voice X                # OpenAI TTS -> voice/NN-slug.mp3 for ap
 python -m shorts plan X                 # ai-vedit plan -> renders/NN-slug.plan.json
 #   review / edit renders/*.plan.json before rendering
 python -m shorts render X               # ai-vedit render (from the plan) -> renders/NN-slug.mp4
+python -m shorts youtube auth           # one-time Google OAuth consent -> saves a token
+python -m shorts publish X              # upload approved+rendered shorts (private + scheduled)
 python -m shorts status [X]             # show stage + per-idea state
 ```
 
@@ -74,6 +76,42 @@ derived from your `.env`. There is also no CSRF protection, so any web page open
 in the same browser can fire simple cross-origin `POST`s at `127.0.0.1:8765`
 (e.g. `POST /api/projects/<name>/run/<stage>`, which takes no body) — an accepted
 risk for this local-only, single-user tool.
+
+## YouTube publishing
+
+Schedule rendered shorts to your own channel. Uploaded as **private + scheduled**
+so YouTube publishes them at the chosen time.
+
+### One-time Google setup
+
+1. console.cloud.google.com → new project → enable **YouTube Data API v3**.
+2. **OAuth consent screen**: User type **External**; add scope
+   `.../auth/youtube.upload`; add your Google account under **Test users**; leave
+   the publishing status at **Testing**.
+3. **Credentials → Create OAuth client ID → Desktop app** → download the JSON.
+4. Point `config.toml` at it:
+
+   ```toml
+   [youtube]
+   client_secret = "client_secret.json"
+   category_id   = 22
+   ```
+
+### Use
+
+```bash
+python -m shorts youtube auth       # one browser consent; re-run ~weekly (Testing mode)
+python -m shorts youtube status     # is a token present?
+python -m shorts publish X          # upload the whole approved+rendered queue
+python -m shorts publish X --slug 01-foo   # just one
+```
+
+or the **Publish** panel in the web UI (cadence + per-idea override + Upload).
+
+The Testing-mode refresh token lapses after ~7 days — re-run `youtube auth` when
+`publish` says the token expired. Videos already uploaded and scheduled publish
+on time regardless. Quota is ~6 uploads/day. Publishing is always an explicit
+action; nothing else in the pipeline touches YouTube.
 
 ## Setup
 
