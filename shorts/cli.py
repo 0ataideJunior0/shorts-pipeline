@@ -166,5 +166,52 @@ def serve(ctx: click.Context, host: str, port: int, open_browser: bool) -> None:
     app.run(host=host, port=port, threaded=True, debug=False)
 
 
+@cli.group()
+def youtube() -> None:
+    """YouTube auth and status."""
+
+
+@youtube.command("auth")
+@click.pass_context
+def youtube_auth(ctx: click.Context) -> None:
+    """One-time (weekly) browser consent for uploads."""
+    config = _config(ctx)
+    from shorts.youtube import authorize, channel_title, YouTubeConfigError
+
+    try:
+        creds = authorize(config)
+    except YouTubeConfigError as exc:
+        raise click.ClickException(str(exc))
+    click.echo(f"connected: {channel_title(creds) or '(no channel name)'}")
+
+
+@youtube.command("status")
+@click.pass_context
+def youtube_status(ctx: click.Context) -> None:
+    """Show whether a usable YouTube token is present."""
+    config = _config(ctx)
+    from shorts.youtube import channel_title, get_credentials, YouTubeAuthError
+
+    try:
+        creds = get_credentials(config)
+    except YouTubeAuthError as exc:
+        click.echo(str(exc))
+        return
+    click.echo(f"connected: {channel_title(creds) or '(no channel name)'}")
+
+
+@cli.command()
+@click.argument("name", required=False)
+@click.option("--slug", "slugs", multiple=True, help="Publish only these ideas.")
+@click.option("--force", is_flag=True, help="Re-upload even if already uploaded (new video).")
+@click.pass_context
+def publish(ctx: click.Context, name: str | None, slugs: tuple[str, ...], force: bool) -> None:
+    """Upload approved + rendered shorts to YouTube as scheduled-private."""
+    config = _config(ctx)
+    from shorts import publish as publish_mod
+
+    publish_mod.run(_resolve(config, name), config, slugs=list(slugs) or None, force=force)
+
+
 def main() -> None:
     cli()
