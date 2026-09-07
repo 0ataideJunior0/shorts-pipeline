@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 
 from shorts.config import Config
@@ -75,3 +76,25 @@ def channel_title(credentials) -> str:
     )
     items = resp.get("items", [])
     return items[0]["snippet"]["title"] if items else ""
+
+
+def insert_video(service, *, mp4_path: Path, body: dict, max_retries: int = 5) -> dict:
+    from googleapiclient.errors import HttpError
+    from googleapiclient.http import MediaFileUpload
+
+    media = MediaFileUpload(str(mp4_path), mimetype="video/*", resumable=True)
+    request = service.videos().insert(
+        part="snippet,status", body=body, media_body=media
+    )
+    response = None
+    tries = 0
+    while response is None:
+        try:
+            _status, response = request.next_chunk()
+        except HttpError as exc:
+            if getattr(exc.resp, "status", None) in (500, 502, 503, 504) and tries < max_retries:
+                tries += 1
+                time.sleep(2 ** tries)
+                continue
+            raise
+    return {"video_id": response["id"], "url": f"https://youtu.be/{response['id']}"}
