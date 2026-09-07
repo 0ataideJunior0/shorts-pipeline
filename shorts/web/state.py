@@ -200,6 +200,7 @@ def build_snapshot(project: Project, config: Config) -> dict:
         ideas.append({
             "slug": slug,
             "title": (p.frontmatter.get("title") if p else "") or slug,
+            "description": p.description if p else "",
             "approved": bool(idea.get("approved")),
             "narration": p.narration if p else "",
             "voice": fr["voice"],

@@ -58,6 +58,7 @@ _IDEAS_SCHEMA = {
                 "properties": {
                     "slug": {"type": "string"},
                     "title": {"type": "string"},
+                    "description": {"type": "string"},
                     "hook": {"type": "string"},
                     "narration_script": {"type": "string"},
                     "asset_categories": {
@@ -69,7 +70,7 @@ _IDEAS_SCHEMA = {
                     "est_duration_sec": {"type": "integer"},
                 },
                 "required": [
-                    "slug", "title", "hook", "narration_script",
+                    "slug", "title", "description", "hook", "narration_script",
                     "asset_categories", "source_start", "source_end",
                     "est_duration_sec",
                 ],
@@ -86,7 +87,9 @@ _STRUCTURAL_SUFFIX = (
     "Return JSON that matches the provided schema exactly. source_start and "
     'source_end are timestamps like "12:30" locating the material in the source '
     "video. slug is 2-4 lowercase words joined by hyphens, with no numeric "
-    "prefix."
+    "prefix. title is the short's headline. description is a 1-3 sentence "
+    "publish caption for the short, written for the viewer, in the same "
+    "language as the narration."
 )
 
 
@@ -127,6 +130,7 @@ def generate_ideas(
             IdeaSpec(
                 slug=item["slug"],
                 title=item["title"],
+                description=item["description"],
                 hook=item["hook"],
                 narration_script=item["narration_script"],
                 asset_categories=list(item["asset_categories"]),

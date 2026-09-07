@@ -1,3 +1,5 @@
+import pytest
+
 from shorts.markdown import (
     IdeaSpec,
     ParsedIdea,
@@ -6,11 +8,13 @@ from shorts.markdown import (
     render_idea,
     replace_section,
     set_approved,
+    set_frontmatter_value,
 )
 
 SPEC = IdeaSpec(
     slug="morning-routine",
     title="The 5am routine that changed everything",
+    description="A three-step morning that fixed my focus. Try it tomorrow.",
     hook="You are waking up wrong.",
     narration_script="Here is the routine.\nStep one: sunlight.",
     asset_categories=["sunrise", "coffee"],
@@ -31,6 +35,7 @@ def test_render_contains_template_parts():
     assert 'source_range: "12:30-14:05"' in md
     assert "asset_categories: [sunrise, coffee]" in md
     assert "- [ ] Approved" in md
+    assert "## Description\n\nA three-step morning that fixed my focus." in md
     assert "## Hook" in md
     assert "## Narration" in md
     assert "Step one: sunlight." in md
@@ -44,6 +49,7 @@ def test_roundtrip_unapproved():
     assert parsed.slug == "03-morning-routine"
     assert parsed.approved is False
     assert parsed.narration == "Here is the routine.\nStep one: sunlight."
+    assert parsed.description == "A three-step morning that fixed my focus. Try it tomorrow."
 
 
 def test_approved_detection():
@@ -99,9 +105,31 @@ def test_replace_section_last_section_at_eof():
 
 
 def test_replace_section_missing_raises():
-    import pytest
     with pytest.raises(ValueError):
         replace_section(IDEA_MD, "Nonexistent", "x")
+
+
+def test_set_frontmatter_value_replaces_line():
+    out = set_frontmatter_value(IDEA_MD, "title", "A brand new title")
+    assert "title: A brand new title" in out
+    assert "title: T\n" not in out
+    assert out.startswith("---\nslug: 01-x")
+    assert parse_idea_file(out).frontmatter["title"] == "A brand new title"
+
+
+def test_set_frontmatter_value_flattens_newlines():
+    out = set_frontmatter_value(IDEA_MD, "title", "  line one\n  line two  ")
+    assert "title: line one line two\n" in out
+
+
+def test_set_frontmatter_value_missing_key_raises():
+    with pytest.raises(ValueError):
+        set_frontmatter_value(IDEA_MD, "description", "x")
+
+
+def test_set_frontmatter_value_no_block_raises():
+    with pytest.raises(ValueError):
+        set_frontmatter_value("no frontmatter here", "title", "x")
 
 
 def test_set_approved_toggles_checkbox():
@@ -113,7 +141,11 @@ def test_set_approved_toggles_checkbox():
     assert "- [x] Approved" not in back
 
 
+def test_set_approved_preserves_surrounding_blank_lines():
+    out = set_approved(IDEA_MD, True)
+    assert "---\n\n- [x] Approved\n\n## Hook" in out
+
+
 def test_set_approved_missing_raises():
-    import pytest
     with pytest.raises(ValueError):
         set_approved("no checkbox here", True)

@@ -103,6 +103,8 @@ def create_app(config: Config) -> Flask:
         try:
             new_text = apply_idea_edit(
                 idea_path.read_text(encoding="utf-8"),
+                title=str(body.get("title", "")),
+                description=str(body.get("description", "")),
                 narration=str(body.get("narration", "")),
                 approved=bool(body.get("approved", False)),
             )

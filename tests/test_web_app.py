@@ -37,7 +37,7 @@ def _idea_md(slug, narration, approved=False):
     box = "x" if approved else " "
     return (
         f"---\nslug: {slug}\ntitle: Demo Idea\n---\n\n"
-        f"- [{box}] Approved\n\n## Hook\n\nh\n\n"
+        f"- [{box}] Approved\n\n## Description\n\nold caption\n\n## Hook\n\nh\n\n"
         f"## Narration\n\n{narration}\n\n## Notes\n\nn\n"
     )
 
@@ -125,13 +125,23 @@ def test_put_idea_updates_md(client):
     c, _, project = client
     resp = c.put(
         "/api/projects/demo/ideas/01-x",
-        json={"narration": "rewritten narration", "approved": False},
+        json={
+            "title": "Renamed short",
+            "description": "A punchier caption.",
+            "narration": "rewritten narration",
+            "approved": False,
+        },
     )
     assert resp.status_code == 200
     md = project.idea_file("01-x").read_text()
+    assert "title: Renamed short\n" in md
+    assert "## Description\n\nA punchier caption.\n" in md
     assert "rewritten narration" in md
     assert "- [ ] Approved" in md
     assert "## Notes\n\nn" in md
+    idea = resp.get_json()["ideas"][0]
+    assert idea["title"] == "Renamed short"
+    assert idea["description"] == "A punchier caption."
 
 
 def test_put_idea_unknown_slug_404(client):

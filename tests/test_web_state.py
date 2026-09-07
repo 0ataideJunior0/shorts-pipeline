@@ -36,7 +36,8 @@ def _idea_md(slug, narration, approved=False):
     box = "x" if approved else " "
     return (
         f"---\nslug: {slug}\ntitle: T\n---\n\n"
-        f"- [{box}] Approved\n\n## Hook\n\nh\n\n"
+        f"- [{box}] Approved\n\n## Description\n\ndesc for {slug}\n\n"
+        f"## Hook\n\nh\n\n"
         f"## Narration\n\n{narration}\n\n## Notes\n\nn\n"
     )
 
@@ -109,6 +110,8 @@ def test_build_snapshot_shape(tmp_path):
     assert snap["ideas"][0]["slug"] == "01-x"
     assert snap["ideas"][0]["approved"] is True
     assert snap["ideas"][0]["narration"] == "script one"
+    assert snap["ideas"][0]["description"] == "desc for 01-x"
+    assert snap["ideas"][0]["title"] == "T"
     assert snap["ideas"][0]["voice"] == "missing"
 
 

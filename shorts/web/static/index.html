@@ -28,6 +28,7 @@
   }
 
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   html { color-scheme: dark light; }
   body {
     margin:0; background:var(--bg); color:var(--ink);
@@ -141,15 +142,22 @@
   /* ---- ideas ---- */
   .card { border:1px solid var(--line); border-radius:8px; background:var(--panel); padding:12px 13px; margin:.55rem 0; }
   .card-top { display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; }
-  .card-top .title { font-size:15px; font-weight:600; flex:1 1 12rem; }
+  .card-top .title-in { flex:1 1 14rem; font-size:15px; font-weight:600; padding:5px 8px; }
   .approve { font-size:12px; color:var(--ink-dim); display:inline-flex; align-items:center; gap:.35rem; white-space:nowrap; }
   .frow { display:flex; gap:.6rem; font:11.5px var(--mono); }
   .frow .fr { color:var(--ink-dim); }
   .frow .fr.fresh { color:var(--ok); }
   .frow .fr.stale { color:var(--run); }
-  .card textarea { margin:.6rem 0 .45rem; }
-  .card details { margin-top:.5rem; border-top:1px solid var(--line); padding-top:.5rem; }
-  .card summary { font:12px var(--mono); color:var(--ink-dim); cursor:pointer; }
+  .field-lbl { display:block; margin:.6rem 0 .15rem; font:11px var(--mono); color:var(--ink-dim); }
+  .tabs { display:flex; gap:0; margin:.7rem 0 0; border-bottom:1px solid var(--line); }
+  .tab {
+    appearance:none; background:none; border:0; cursor:pointer;
+    font:12px var(--mono); color:var(--ink-dim); padding:5px 10px;
+    border-bottom:2px solid transparent; margin-bottom:-1px;
+  }
+  .tab.on { color:var(--ink); border-bottom-color:var(--run); }
+  .tab:hover:not(.on) { color:var(--ink); }
+  .card textarea { margin:.55rem 0 .45rem; }
   .plan-err { display:block; margin-top:.35rem; font-size:12px; }
 
   /* ---- projects list ---- */
@@ -441,21 +449,39 @@ function deck(s, armedRow, runningHere) {
   return `<div class="deck idle">Every stage is current. Edit an idea or the brief, then a stage will offer to re-run.</div>`;
 }
 
+const ideaView = new Map(); // slug -> "idea" | "plan"
+
 function ideaCard(idea) {
   const fr = (k) => `<span class="fr ${idea[k]}">${idea[k] === "fresh" ? "●" : idea[k] === "stale" ? "◐" : "○"} ${k}</span>`;
-  const plan = idea.plan_json
-    ? `<textarea class="plan" rows="12">${escapeHtml(JSON.stringify(idea.plan_json, null, 2))}</textarea>
-       <button class="btn save-plan">Save plan</button><span class="plan-err err"></span>`
-    : `<p class="muted" style="margin:.4rem 0 0">No plan yet. Run plan to build the shot list.</p>`;
+  const hasPlan = !!idea.plan_json;
+  const showPlan = hasPlan && (ideaView.get(idea.slug) || "plan") === "plan";
+
+  const tabs = hasPlan
+    ? `<div class="tabs">
+        <button class="tab ${showPlan ? "" : "on"}" data-view="idea">Idea</button>
+        <button class="tab ${showPlan ? "on" : ""}" data-view="plan">Plan</button>
+       </div>`
+    : `<label class="field-lbl">narration</label>`;
+
+  const planBlock = hasPlan
+    ? `<div class="pane-plan" ${showPlan ? "" : "hidden"}>
+        <textarea class="plan" rows="12">${escapeHtml(JSON.stringify(idea.plan_json, null, 2))}</textarea>
+        <button class="btn save-plan">Save plan</button><span class="plan-err err"></span>
+       </div>`
+    : "";
+
   return `<div class="card" data-slug="${escapeHtml(idea.slug)}">
     <div class="card-top">
-      <span class="title">${escapeHtml(idea.title)}</span>
+      <input class="title-in" value="${escapeHtml(idea.title)}" aria-label="video title">
       <label class="approve"><input type="checkbox" class="approved" ${idea.approved ? "checked" : ""}> approved</label>
       <span class="frow">${fr("voice")}${fr("plan")}${fr("render")}</span>
     </div>
-    <textarea class="narration" rows="5">${escapeHtml(idea.narration)}</textarea>
+    <label class="field-lbl">description</label>
+    <textarea class="desc-in" rows="2">${escapeHtml(idea.description || "")}</textarea>
     <button class="btn save-idea">Save idea</button>
-    <details><summary>plan.json</summary>${plan}</details>
+    ${tabs}
+    <textarea class="narration" rows="5" ${showPlan ? "hidden" : ""}>${escapeHtml(idea.narration)}</textarea>
+    ${planBlock}
   </div>`;
 }
 
@@ -498,9 +524,15 @@ function wire() {
 
   document.querySelectorAll(".card").forEach((card) => {
     const slug = card.dataset.slug;
+    card.querySelectorAll(".tab").forEach((t) => t.onclick = () => {
+      ideaView.set(slug, t.dataset.view);
+      render();
+    });
     $(".save-idea", card).onclick = async () => {
       try {
         state = await api("PUT", `/api/projects/${encodeURIComponent(state.name)}/ideas/${encodeURIComponent(slug)}`, {
+          title: $(".title-in", card).value,
+          description: $(".desc-in", card).value,
           narration: $(".narration", card).value,
           approved: $(".approved", card).checked,
         });

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 class IdeaSpec:
     slug: str
     title: str
+    description: str
     hook: str
     narration_script: str
     asset_categories: list[str]
@@ -31,6 +32,8 @@ def render_idea(idea: IdeaSpec, index: int) -> str:
         f"asset_categories: [{categories}]\n"
         "---\n\n"
         "- [ ] Approved\n\n"
+        "## Description\n\n"
+        f"{idea.description.strip()}\n\n"
         "## Hook\n\n"
         f"{idea.hook.strip()}\n\n"
         "## Narration\n\n"
@@ -45,11 +48,13 @@ class ParsedIdea:
     slug: str
     approved: bool
     narration: str
+    description: str
     frontmatter: dict
 
 
 _FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
-_APPROVED_RE = re.compile(r"^\s*-\s*\[([ xX])\]\s*Approved\s*$", re.MULTILINE)
+# [ \t] rather than \s so a substitution can't swallow the blank lines around it
+_APPROVED_RE = re.compile(r"^[ \t]*-[ \t]*\[([ xX])\][ \t]*Approved[ \t]*$", re.MULTILINE)
 
 
 def _parse_frontmatter(text: str) -> dict:
@@ -81,6 +86,7 @@ def parse_idea_file(text: str) -> ParsedIdea:
         slug=frontmatter.get("slug", ""),
         approved=approved,
         narration=_section(text, "Narration"),
+        description=_section(text, "Description"),
         frontmatter=frontmatter,
     )
 
@@ -105,3 +111,21 @@ def set_approved(text: str, approved: bool) -> str:
     if count == 0:
         raise ValueError("no '- [ ] Approved' line")
     return new_text
+
+
+def set_frontmatter_value(text: str, key: str, value: str) -> str:
+    """Replace ``key: ...`` inside the frontmatter block.
+
+    ``value`` is flattened to a single line (whitespace collapsed). Raises
+    ``ValueError`` if there is no frontmatter block or no such key in it.
+    """
+    match = _FRONTMATTER_RE.match(text)
+    if not match:
+        raise ValueError("no frontmatter block")
+    block = match.group(1)
+    line_re = re.compile(rf"^{re.escape(key)}:.*$", re.MULTILINE)
+    if not line_re.search(block):
+        raise ValueError(f"no '{key}:' in frontmatter")
+    clean = " ".join(value.split())
+    new_block = line_re.sub(f"{key}: {clean}", block, count=1)
+    return text[: match.start(1)] + new_block + text[match.end(1) :]

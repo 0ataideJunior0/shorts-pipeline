@@ -2,16 +2,20 @@ from __future__ import annotations
 
 import json
 
-from shorts.markdown import replace_section, set_approved
+from shorts.markdown import replace_section, set_approved, set_frontmatter_value
 
 
 class EditError(Exception):
     """An edit request the server refuses; the message is shown to the user."""
 
 
-def apply_idea_edit(md_text: str, *, narration: str, approved: bool) -> str:
+def apply_idea_edit(
+    md_text: str, *, title: str, description: str, narration: str, approved: bool
+) -> str:
     try:
-        out = replace_section(md_text, "Narration", narration)
+        out = set_frontmatter_value(md_text, "title", title)
+        out = replace_section(out, "Description", description)
+        out = replace_section(out, "Narration", narration)
         return set_approved(out, approved)
     except ValueError as exc:
         raise EditError(f"unexpected idea file format: {exc}") from exc

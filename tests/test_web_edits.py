@@ -10,24 +10,54 @@ from shorts.web.edits import (
 )
 
 IDEA_MD = (
-    "---\nslug: 01-x\n---\n\n"
+    "---\nslug: 01-x\ntitle: old title\n---\n\n"
     "- [ ] Approved\n\n"
+    "## Description\n\nold description\n\n"
     "## Hook\n\nh\n\n"
     "## Narration\n\nold\n\n"
     "## Notes\n\nn\n"
 )
 
 
-def test_apply_idea_edit_sets_narration_and_approval():
-    out = apply_idea_edit(IDEA_MD, narration="new script", approved=True)
+def _edit(md, **over):
+    kw = dict(title="t", description="d", narration="n", approved=False)
+    kw.update(over)
+    return apply_idea_edit(md, **kw)
+
+
+def test_apply_idea_edit_sets_all_fields():
+    out = _edit(
+        IDEA_MD,
+        title="New Title",
+        description="A fresh caption for the short.",
+        narration="new script",
+        approved=True,
+    )
+    assert "title: New Title\n" in out
+    assert "## Description\n\nA fresh caption for the short.\n" in out
     assert "## Narration\n\nnew script\n" in out
     assert "- [x] Approved" in out
+    assert "## Hook\n\nh" in out
     assert "## Notes\n\nn" in out
+
+
+def test_apply_idea_edit_flattens_multiline_title():
+    out = _edit(IDEA_MD, title="line one\nline two")
+    assert "title: line one line two\n" in out
 
 
 def test_apply_idea_edit_bad_file_raises_editerror():
     with pytest.raises(EditError):
-        apply_idea_edit("nothing useful", narration="x", approved=False)
+        _edit("nothing useful")
+
+
+def test_apply_idea_edit_missing_description_section_raises():
+    no_desc = (
+        "---\nslug: 01-x\ntitle: t\n---\n\n- [ ] Approved\n\n"
+        "## Narration\n\nx\n\n## Notes\n\nn\n"
+    )
+    with pytest.raises(EditError):
+        _edit(no_desc)
 
 
 def test_build_prompt_json_shape():
