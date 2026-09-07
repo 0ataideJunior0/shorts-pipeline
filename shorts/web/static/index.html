@@ -50,7 +50,12 @@ function route() {
 }
 
 async function loadList() {
-  const rows = await api("GET", "/api/projects");
+  let rows;
+  try { rows = await api("GET", "/api/projects"); }
+  catch (err) {
+    $("#app").innerHTML = `<p class="err">${escapeHtml(err.message)}</p> <a href="#/" onclick="route()">retry</a>`;
+    return;
+  }
   const app = $("#app");
   app.innerHTML = `
     <h1>shorts pipeline</h1>
@@ -70,8 +75,8 @@ async function loadList() {
   };
   $("#projects").innerHTML = rows.map((p) => `
     <div class="row">
-      <a href="#/${p.name}"><b>${p.name}</b></a>
-      <span class="muted">${p.title || ""}</span>
+      <a href="#/${encodeURIComponent(p.name)}"><b>${escapeHtml(p.name)}</b></a>
+      <span class="muted">${escapeHtml(p.title || "")}</span>
     </div>`).join("") || "<p class='muted'>no projects yet</p>";
 }
 
@@ -81,7 +86,7 @@ function slugify(s) {
 
 async function loadProject(name) {
   try { state = await api("GET", `/api/projects/${name}`); }
-  catch (err) { $("#app").innerHTML = `<p class="err">${err.message}</p> <a href="#/">back</a>`; return; }
+  catch (err) { $("#app").innerHTML = `<p class="err">${escapeHtml(err.message)}</p> <a href="#/">back</a>`; return; }
   render();
 }
 
@@ -90,10 +95,17 @@ function render() {
   const s = state;
   const running = s.job && s.job.running;
   $("#cancel").hidden = !running;
+  const srcUrl = s.source.url || "";
+  const srcIsHttp = /^https?:\/\//i.test(srcUrl);
+  const sourceBit = srcUrl
+    ? (srcIsHttp
+        ? `· <a href="${escapeHtml(srcUrl)}">source</a>`
+        : `· <span class="muted">${escapeHtml(srcUrl)}</span>`)
+    : "";
   $("#app").innerHTML = `
     <a href="#/">← projects</a>
-    <h1>${s.name}</h1>
-    <p class="muted">${s.source.title || ""} ${s.source.url ? `· <a href="${s.source.url}">source</a>` : ""}</p>
+    <h1>${escapeHtml(s.name)}</h1>
+    <p class="muted">${escapeHtml(s.source.title || "")} ${sourceBit}</p>
     <h2>Pipeline</h2>
     ${s.stages.map(stageRow).join("")}
     <h2>Prompt</h2>
@@ -108,20 +120,24 @@ function render() {
 function stageRow(st) {
   const disabled = st.status === "blocked" || (state.job && state.job.running);
   const canForce = st.status !== "blocked";
+  const isFetch = st.stage === "fetch";
+  const controls = isFetch
+    ? `<span class="muted">created via New Project</span>`
+    : `${canForce ? `<label class="muted"><input type="checkbox" class="force" data-stage="${st.stage}"> force</label>` : ""}
+    <button class="run" data-stage="${st.stage}" ${disabled ? "disabled" : ""}>Run</button>`;
   return `<div class="row">
     <b style="width:6rem">${st.stage}</b>
     <span class="badge ${st.status}">${st.status}</span>
-    <span class="muted">${st.detail || ""}</span>
+    <span class="muted">${escapeHtml(st.detail || "")}</span>
     <span style="flex:1"></span>
-    ${canForce ? `<label class="muted"><input type="checkbox" class="force" data-stage="${st.stage}"> force</label>` : ""}
-    <button class="run" data-stage="${st.stage}" ${disabled ? "disabled" : ""}>Run</button>
+    ${controls}
   </div>`;
 }
 
 function ideaCard(idea) {
   return `<div class="card" data-slug="${idea.slug}">
     <div class="row">
-      <b>${idea.title}</b>
+      <b>${escapeHtml(idea.title)}</b>
       <label><input type="checkbox" class="approved" ${idea.approved ? "checked" : ""}> approved</label>
       <span class="badge ${idea.voice}">voice</span>
       <span class="badge ${idea.plan}">plan</span>
@@ -149,16 +165,14 @@ function wire() {
     const stage = b.dataset.stage;
     const force = document.querySelector(`.force[data-stage="${stage}"]`)?.checked || false;
     try {
-      if (stage === "fetch") {
-        await api("POST", `/api/projects/${state.name}/run/fetch`, { force }).catch(() => {});
-      } else {
-        await api("POST", `/api/projects/${state.name}/run/${stage}`, { force });
-      }
+      await api("POST", `/api/projects/${state.name}/run/${stage}`, { force });
     } catch (err) { alert(err.message); }
   });
   $("#save-prompt").onclick = async () => {
-    state = await api("PUT", `/api/projects/${state.name}/prompt`, { prompt: $("#prompt").value });
-    render();
+    try {
+      state = await api("PUT", `/api/projects/${state.name}/prompt`, { prompt: $("#prompt").value });
+      render();
+    } catch (err) { alert(err.message); }
   };
   document.querySelectorAll(".card").forEach((card) => {
     const slug = card.dataset.slug;
@@ -188,7 +202,9 @@ $("#cancel").onclick = () => api("POST", "/api/jobs/current/cancel").catch((e) =
 const log = $("#log");
 const es = new EventSource("/api/jobs/current/stream");
 es.onmessage = (e) => {
-  const ev = JSON.parse(e.data);
+  let ev;
+  try { ev = JSON.parse(e.data); }
+  catch { return; }
   if (ev.type === "line") {
     log.textContent += ev.text + "\n";
     log.scrollTop = log.scrollHeight;
@@ -199,6 +215,10 @@ es.onmessage = (e) => {
       if (currentProject) loadProject(currentProject);
     }
   }
+};
+es.onerror = () => {
+  log.textContent += "\n— stream disconnected — reconnecting… —\n";
+  log.scrollTop = log.scrollHeight;
 };
 
 window.addEventListener("hashchange", route);
