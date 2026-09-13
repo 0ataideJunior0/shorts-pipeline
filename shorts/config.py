@@ -29,7 +29,6 @@ class VoiceCfg:
     model: str
     voice: str
     instructions: str | None
-    speed: float | None
 
 
 @dataclass(frozen=True)
@@ -72,6 +71,7 @@ class Config:
     voice: VoiceCfg
     render: RenderCfg
     openai_api_key: str
+    google_api_key: str
     youtube: YouTubeCfg
 
 
@@ -160,6 +160,9 @@ def load_config(root: Path | None = None) -> Config:
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not api_key:
         raise ConfigError("OPENAI_API_KEY is not set (put it in .env)")
+    google_api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not google_api_key:
+        raise ConfigError("GEMINI_API_KEY is not set (put it in .env)")
 
     if "projects_dir" not in raw:
         raise ConfigError("config.toml missing required key: projects_dir")
@@ -198,12 +201,6 @@ def load_config(root: Path | None = None) -> Config:
     if voice_instructions is not None:
         voice_instructions = str(voice_instructions).strip() or None
 
-    voice_speed = v.get("speed")
-    if voice_speed is not None:
-        voice_speed = float(voice_speed)
-        if not 0.25 <= voice_speed <= 4.0:
-            raise ConfigError("voice.speed must be between 0.25 and 4.0")
-
     yt = raw.get("youtube", {})
     yt_secret = yt.get("client_secret")
     if yt_secret is not None:
@@ -224,13 +221,13 @@ def load_config(root: Path | None = None) -> Config:
         transcribe=TranscribeCfg(model=str(t.get("model", "whisper-1"))),
         ideate=IdeateCfg(model=str(i.get("model", "gpt-4.1")), count=count),
         voice=VoiceCfg(
-            model=str(v.get("model", "gpt-4o-mini-tts")),
-            voice=str(v.get("voice", "alloy")),
+            model=str(v.get("model", "gemini-2.5-pro-preview-tts")),
+            voice=str(v.get("voice", "Kore")),
             instructions=voice_instructions,
-            speed=voice_speed,
         ),
         render=RenderCfg(min_beat_duration=min_beat, subtitle=subtitle),
         openai_api_key=api_key,
+        google_api_key=google_api_key,
         youtube=YouTubeCfg(
             client_secret=yt_secret,
             token_path=yt_token,

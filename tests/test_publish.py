@@ -142,12 +142,12 @@ def _cfg(tmp_path):
         root=tmp_path, projects_dir=tmp_path / "projects", assets_dir=tmp_path / "assets",
         aspect="9:16",
         transcribe=TranscribeCfg(model="w"), ideate=IdeateCfg(model="g", count=6),
-        voice=VoiceCfg(model="m", voice="alloy", instructions=None, speed=None),
+        voice=VoiceCfg(model="m", voice="Kore", instructions=None),
         render=RenderCfg(min_beat_duration=3.0, subtitle=SubtitleCfg(
             enabled=True, font=None, font_size=None, primary_color=None, bold=False,
             italic=False, uppercase=False, position=None, margin_vertical=None,
             max_chars_per_line=None, max_lines=None, max_duration=None)),
-        openai_api_key="sk", youtube=YouTubeCfg(
+        openai_api_key="sk", google_api_key="gm", youtube=YouTubeCfg(
             client_secret=None, token_path=tmp_path / ".youtube_token.json",
             category_id=22),
     )

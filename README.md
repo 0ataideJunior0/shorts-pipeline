@@ -17,7 +17,7 @@ python -m shorts transcribe X           # ffmpeg + OpenAI Whisper -> transcript
 #   optional: edit ideas/prompt.json to steer idea generation (pt-BR brief by default)
 python -m shorts ideate X               # prompt.json + transcript -> ideas/NN-slug.md (each with "- [ ] Approved")
 #   review ideas/*.md, tick "- [x] Approved", edit narration if needed
-python -m shorts voice X                # OpenAI TTS -> voice/NN-slug.mp3 for approved ideas
+python -m shorts voice X                # Gemini TTS -> voice/NN-slug.mp3 for approved ideas
 python -m shorts plan X                 # ai-vedit plan -> renders/NN-slug.plan.json
 #   review / edit renders/*.plan.json before rendering
 python -m shorts render X               # ai-vedit render (from the plan) -> renders/NN-slug.mp4
@@ -30,11 +30,13 @@ python -m shorts status [X]             # show stage + per-idea state
 ideation model, pre-filled in Brazilian Portuguese. Edit it any time; after the
 first `ideate` run, changes need `python -m shorts ideate X --force`.
 
-Narration voice is tuned globally in `config.toml` under `[voice]`: `voice`
-(named preset), `instructions` (free-text tone/style/pacing, `gpt-4o-mini-tts`
-only), and `speed` (0.25–4.0, `tts-1` family). Changing any of them re-synthesizes
-affected clips on the next `voice` run and regenerates their plan on the next
-`plan` run — no `--force` needed.
+Narration voice is tuned globally in `config.toml` under `[voice]`: `model`
+(`gemini-2.5-pro-preview-tts` or `gemini-2.5-flash-preview-tts`), `voice` (one
+of Gemini's 30 prebuilt voice names, e.g. `Kore`), and `instructions`
+(free-text tone/style/pacing steering, prefixed onto the narration text before
+synthesis). Changing any of them re-synthesizes affected clips on the next
+`voice` run and regenerates their plan on the next `plan` run — no `--force`
+needed.
 
 `plan` and `render` are separate so you can inspect the shot list before
 spending render time. `plan` writes one `renders/NN-slug.plan.json` per approved
@@ -76,6 +78,36 @@ derived from your `.env`. There is also no CSRF protection, so any web page open
 in the same browser can fire simple cross-origin `POST`s at `127.0.0.1:8765`
 (e.g. `POST /api/projects/<name>/run/<stage>`, which takes no body) — an accepted
 risk for this local-only, single-user tool.
+
+## Narration voice (Gemini TTS)
+
+Narration is synthesized with the Gemini API's native TTS models
+(`gemini-2.5-pro-preview-tts` / `gemini-2.5-flash-preview-tts`), not a
+dedicated Cloud service — so setup is a single API key, no service account or
+OAuth consent screen.
+
+### One-time Google setup
+
+1. Go to [aistudio.google.com/apikey](https://aistudio.google.com/apikey) and
+   sign in with your Google account.
+2. Click **Create API key** (choose or create any Google Cloud project when
+   prompted — TTS billing rides on that project, no separate API to enable).
+3. Copy the key and add it to `.env`:
+
+   ```bash
+   GEMINI_API_KEY=your-key-here
+   ```
+
+### Use
+
+Nothing else to configure — `python -m shorts voice X` picks up
+`GEMINI_API_KEY` automatically. Tune `model` / `voice` / `instructions` under
+`[voice]` in `config.toml` (see above) and re-run `voice` to hear changes; no
+`--force` needed since narration re-synthesizes when those settings change.
+
+Pricing is per character of input text, billed to the Cloud project behind
+the key ([ai.google.dev/pricing](https://ai.google.dev/pricing) has current
+rates) — check it if you're narrating a high volume of shorts.
 
 ## YouTube publishing
 
@@ -120,7 +152,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp config.example.toml config.toml   # then edit assets_dir etc.
-echo "OPENAI_API_KEY=sk-..." > .env
+cp .env.example .env                 # then fill in OPENAI_API_KEY and GEMINI_API_KEY
 ```
 
 Requires `ffmpeg` and `ai-vedit` on `PATH`. `config.toml` and `.env` are read
@@ -137,9 +169,9 @@ python -m pytest
 ### TODO — expand test coverage
 
 - [ ] Stage-level tests for `fetch` / `transcribe` / `ideate` / `voice` /
-      `render` with the OpenAI client and `subprocess` (yt-dlp, ffmpeg,
+      `render` with the OpenAI/Gemini clients and `subprocess` (yt-dlp, ffmpeg,
       ai-vedit) mocked — assert the files written and the manifest transitions.
 - [ ] End-to-end smoke test behind a `--runslow` marker: a ~20s clip through
-      all five stages against the real OpenAI APIs and `ai-vedit`.
+      all five stages against the real OpenAI/Gemini APIs and `ai-vedit`.
 - [ ] Browser/end-to-end test of the web UI (`shorts serve`): drive a project
       through the stages against a stubbed job runner.

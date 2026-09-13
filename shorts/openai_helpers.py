@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 
@@ -8,23 +7,6 @@ from openai import OpenAI
 
 from shorts.markdown import IdeaSpec
 from shorts.transcript import Segment
-
-
-def voice_params_hash(
-    *, model: str, voice: str, instructions: str | None, speed: float | None
-) -> str:
-    """Stable digest of the TTS knobs that affect the produced audio.
-
-    Folded into the voice/render staleness checks so editing `[voice]` in
-    config.toml re-synthesizes on the next run without `--force`.
-    """
-    parts = [
-        model,
-        voice,
-        instructions or "",
-        "" if speed is None else format(float(speed), ".4f"),
-    ]
-    return hashlib.sha256("\n".join(parts).encode()).hexdigest()
 
 
 def get_client(api_key: str) -> OpenAI:
@@ -144,46 +126,3 @@ def generate_ideas(
             )
         )
     return out
-
-
-def _speech_kwargs(
-    *,
-    text: str,
-    model: str,
-    voice: str,
-    instructions: str | None = None,
-    speed: float | None = None,
-) -> dict:
-    """Build the audio.speech.create kwargs, omitting unset optional knobs.
-
-    `instructions` (tone/style/pacing, gpt-4o-mini-tts) and `speed` (tts-1
-    family) are only sent when configured, so leaving them unset keeps the
-    request identical to the previous behaviour.
-    """
-    kwargs: dict = {"model": model, "voice": voice, "input": text}
-    if instructions:
-        kwargs["instructions"] = instructions
-    if speed is not None:
-        kwargs["speed"] = speed
-    return kwargs
-
-
-def synthesize_speech(
-    client: OpenAI,
-    *,
-    text: str,
-    out_path: Path,
-    model: str,
-    voice: str,
-    instructions: str | None = None,
-    speed: float | None = None,
-) -> None:
-    kwargs = _speech_kwargs(
-        text=text,
-        model=model,
-        voice=voice,
-        instructions=instructions,
-        speed=speed,
-    )
-    with client.audio.speech.with_streaming_response.create(**kwargs) as response:
-        response.stream_to_file(out_path)

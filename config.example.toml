@@ -11,11 +11,10 @@ model = "gpt-4.1"
 count = 6
 
 [voice]
-model = "gpt-4o-mini-tts"
-voice = "alloy"   # alloy ash ballad coral echo fable onyx nova sage shimmer verse
+model = "gemini-2.5-pro-preview-tts"   # or gemini-2.5-flash-preview-tts (faster, cheaper)
+voice = "Kore"   # Zephyr Puck Charon Kore Fenrir Leda Orus Aoede ... (30 prebuilt voices)
 # instructions = "Narre em pt-BR num tom calmo e confiante, com ritmo pausado."
-#   free-text tone/style/pacing steering; only honored by gpt-4o-mini-tts
-# speed = 1.0     # 0.25-4.0; native on tts-1/tts-1-hd, prefer `instructions` for gpt-4o-mini-tts
+#   free-text tone/style/pacing steering, prefixed onto the narration text
 
 [render]
 min_beat_duration = 3.0
@@ -39,4 +38,4 @@ enabled = true
 [youtube]
 # client_secret = "client_secret.json"   # path to the downloaded OAuth "Desktop app" client
 # token_path    = ".youtube_token.json"  # OAuth token cache (default; git-ignored)
-category_id     = 22                      # default YouTube category (People & Blogs)
+category_id     = 20                      # default YouTube category (20 Gaming, 24 Entertainment, 23 Comedy, 27 Education, 28 Science & Technology, 26 Howto & Style, 10 Music, 22 People & Blogs)
