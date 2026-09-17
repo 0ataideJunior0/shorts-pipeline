@@ -196,15 +196,19 @@ def test_run_uploads_eligible_and_records(tmp_path, monkeypatch):
         return {"video_id": f"v{len(seen)}", "url": f"https://youtu.be/v{len(seen)}"}
     monkeypatch.setattr(pub, "insert_video", fake_insert)
 
+    start_dt = datetime.now(UTC).replace(hour=9, minute=0, second=0, microsecond=0) + timedelta(
+        days=365
+    )
+    start = iso(start_dt)
     m = Manifest.load(project.manifest_path)
-    m.set_publish(start="2026-09-14T09:00:00Z", interval_hours=24, weekdays=None)
+    m.set_publish(start=start, interval_hours=24, weekdays=None)
     m.save(project.manifest_path)
 
     pub.run(project, cfg)
 
     assert [s[0] for s in seen] == ["01-x.mp4", "02-y.mp4"]
-    assert seen[0][2] == "2026-09-14T09:00:00Z"
-    assert seen[1][2] == "2026-09-15T09:00:00Z"
+    assert seen[0][2] == start
+    assert seen[1][2] == iso(start_dt + timedelta(days=1))
     back = Manifest.load(project.manifest_path)
     assert back.get_idea("01-x")["youtube"]["video_id"] == "v1"
     assert back.get_idea("01-x")["youtube"]["privacy"] == "private"

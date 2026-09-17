@@ -1,9 +1,11 @@
 import json
+from datetime import datetime, timedelta, timezone
 
 from shorts.config import (
     Config, IdeateCfg, RenderCfg, SubtitleCfg, TranscribeCfg, VoiceCfg, YouTubeCfg,
 )
 from shorts.project import Manifest, Project, sha256_text
+from shorts.publish import iso
 from shorts.web.state import (
     build_snapshot, category_report, idea_freshness, list_projects,
     prompt_text, stage_rows,
@@ -189,14 +191,18 @@ def test_publish_queue_shape(tmp_path):
                render={"path": "renders/01-x.mp4",
                        "plan_sha256": sha256_file(project.plan_file("01-x"))})
     m.set_idea("02-y", approved=True, script_sha256="s")
-    m.set_publish(start="2026-09-14T09:00:00Z", interval_hours=24, weekdays=None)
+    start = iso(
+        datetime.now(timezone.utc).replace(hour=9, minute=0, second=0, microsecond=0)
+        + timedelta(days=365)
+    )
+    m.set_publish(start=start, interval_hours=24, weekdays=None)
     m.save(project.manifest_path)
 
     q = publish_queue(project, cfg)
-    assert q["cadence"]["start"] == "2026-09-14T09:00:00Z"
+    assert q["cadence"]["start"] == start
     by = {i["slug"]: i for i in q["items"]}
     assert by["01-x"]["render"] == "fresh"
-    assert by["01-x"]["publish_at"] == "2026-09-14T09:00:00Z"
+    assert by["01-x"]["publish_at"] == start
     assert by["01-x"]["from_cadence"] is True
     assert by["01-x"]["youtube"] is None
     assert by["02-y"]["render"] == "missing"
