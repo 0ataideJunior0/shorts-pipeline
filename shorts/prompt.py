@@ -14,7 +14,10 @@ DEFAULT_IDEATE_PROMPT = (
     "gancho forte nos primeiros segundos e um roteiro de narração de 30 a "
     "60 segundos quando lido em voz alta (cerca de 80 a 150 palavras). Use "
     "apenas informações presentes na transcrição. Escreva todos os textos "
-    "em português do Brasil, com linguagem clara e informal."
+    "em português do Brasil, com linguagem clara e informal. Ao final de "
+    "cada ideia finalize com uma CTA (Call to Action) convidando o público "
+    "a interagir, como curtir, comentar ou compartilhar. Evite repetir "
+    "informações e foque em criar conteúdo envolvente e dinâmico."
 )
 
 

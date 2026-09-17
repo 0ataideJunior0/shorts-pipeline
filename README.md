@@ -3,8 +3,6 @@
 Turn one YouTube source video into several short (9:16) narrated videos through
 a resumable, command-driven pipeline with a human approval gate.
 
-Design spec: [`docs/superpowers/specs/2026-09-06-shorts-pipeline-design.md`](docs/superpowers/specs/2026-09-06-shorts-pipeline-design.md)
-
 ## Pipeline
 
 Run as `python -m shorts <command>` (activate the venv first, or use
