@@ -6,14 +6,20 @@ import pytest
 from shorts.config import load_config, ConfigError
 
 
+def _toml_path(p: Path) -> str:
+    """TOML string literals treat backslashes as escapes, so Windows paths
+    (C:\\Users\\...) must use forward slashes when embedded in TOML."""
+    return p.as_posix()
+
+
 def _write(root: Path, *, toml: str | None = None, env_key: str | None = "sk-test",
-           google_key: str | None = "gm-test", make_assets: bool = True) -> Path:
+           make_assets: bool = True) -> Path:
     assets = root / "assets"
     if make_assets:
         assets.mkdir()
     default_toml = textwrap.dedent(f"""
         projects_dir = "projects"
-        assets_dir = "{assets}"
+        assets_dir = "{_toml_path(assets)}"
         aspect = "9:16"
 
         [transcribe]
@@ -24,8 +30,8 @@ def _write(root: Path, *, toml: str | None = None, env_key: str | None = "sk-tes
         count = 6
 
         [voice]
-        model = "gemini-2.5-pro-preview-tts"
-        voice = "Kore"
+        model = "omnivoice"
+        voice = "39f10351"
 
         [render]
         min_beat_duration = 3.0
@@ -34,8 +40,6 @@ def _write(root: Path, *, toml: str | None = None, env_key: str | None = "sk-tes
     env_lines = []
     if env_key is not None:
         env_lines.append(f"OPENAI_API_KEY={env_key}")
-    if google_key is not None:
-        env_lines.append(f"GEMINI_API_KEY={google_key}")
     (root / ".env").write_text("\n".join(env_lines) + ("\n" if env_lines else ""))
     return root
 
@@ -43,13 +47,10 @@ def _write(root: Path, *, toml: str | None = None, env_key: str | None = "sk-tes
 @pytest.fixture(autouse=True)
 def _clear_key(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
 
-def _write_env(tmp_path, *, openai_key: str = "sk-test", google_key: str = "gm-test"):
-    (tmp_path / ".env").write_text(
-        f"OPENAI_API_KEY={openai_key}\nGEMINI_API_KEY={google_key}\n"
-    )
+def _write_env(tmp_path, *, openai_key: str = "sk-test"):
+    (tmp_path / ".env").write_text(f"OPENAI_API_KEY={openai_key}\n")
 
 
 def test_loads_valid_config(tmp_path):
@@ -59,22 +60,26 @@ def test_loads_valid_config(tmp_path):
     assert cfg.assets_dir == (tmp_path / "assets")
     assert cfg.aspect == "9:16"
     assert cfg.ideate.count == 6
-    assert cfg.voice.voice == "Kore"
-    assert cfg.voice.instructions is None
+    assert cfg.voice.base_url == "http://localhost:3900"
+    assert cfg.voice.model == "omnivoice"
+    assert cfg.voice.voice == "39f10351"
+    assert cfg.voice.language is None
+    assert cfg.voice.speed == 1.0
+    assert cfg.voice.instruct is None
     assert cfg.render.min_beat_duration == 3.0
     assert cfg.render.subtitle.enabled is True  # default when table absent
     assert cfg.render.subtitle.font is None
     assert cfg.render.subtitle.bold is False
     assert cfg.render.subtitle.position is None
     assert cfg.openai_api_key == "sk-test"
-    assert cfg.google_api_key == "gm-test"
 
 
 def _write_render_subtitle(tmp_path, body: str):
     assets = tmp_path / "assets"
     assets.mkdir()
     (tmp_path / "config.toml").write_text(
-        f'projects_dir="projects"\nassets_dir="{assets}"\n\n[render.subtitle]\n{body}'
+        f'projects_dir="projects"\nassets_dir="{_toml_path(assets)}"\n\n'
+        f"[render.subtitle]\n{body}"
     )
     _write_env(tmp_path)
 
@@ -129,27 +134,50 @@ def test_render_subtitle_bad_font_size(tmp_path):
         load_config(tmp_path)
 
 
-def test_voice_instructions(tmp_path):
+def test_voice_full_customization(tmp_path):
     assets = tmp_path / "assets"
     assets.mkdir()
     (tmp_path / "config.toml").write_text(
-        f'projects_dir="projects"\nassets_dir="{assets}"\n\n'
-        '[voice]\ninstructions = "  calm, warm  "\n'
+        f'projects_dir="projects"\nassets_dir="{_toml_path(assets)}"\n\n'
+        "[voice]\n"
+        'base_url = "http://localhost:4000"\n'
+        'model = "voxcpm2"\n'
+        'voice = "demo0001"\n'
+        'language = "pt"\n'
+        "speed = 1.25\n"
+        'instruct = "  calm, warm  "\n'
     )
     _write_env(tmp_path)
     cfg = load_config(tmp_path)
-    assert cfg.voice.instructions == "calm, warm"
+    assert cfg.voice.base_url == "http://localhost:4000"
+    assert cfg.voice.model == "voxcpm2"
+    assert cfg.voice.voice == "demo0001"
+    assert cfg.voice.language == "pt"
+    assert cfg.voice.speed == 1.25
+    assert cfg.voice.instruct == "calm, warm"
 
 
-def test_voice_blank_instructions_becomes_none(tmp_path):
+def test_voice_blank_instruct_becomes_none(tmp_path):
     assets = tmp_path / "assets"
     assets.mkdir()
     (tmp_path / "config.toml").write_text(
-        f'projects_dir="projects"\nassets_dir="{assets}"\n\n'
-        '[voice]\ninstructions = "   "\n'
+        f'projects_dir="projects"\nassets_dir="{_toml_path(assets)}"\n\n'
+        '[voice]\ninstruct = "   "\n'
     )
     _write_env(tmp_path)
-    assert load_config(tmp_path).voice.instructions is None
+    assert load_config(tmp_path).voice.instruct is None
+
+
+def test_voice_bad_speed(tmp_path):
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    (tmp_path / "config.toml").write_text(
+        f'projects_dir="projects"\nassets_dir="{_toml_path(assets)}"\n\n'
+        "[voice]\nspeed = 0\n"
+    )
+    _write_env(tmp_path)
+    with pytest.raises(ConfigError, match="voice.speed must be > 0"):
+        load_config(tmp_path)
 
 
 def test_missing_config_file(tmp_path):
@@ -163,12 +191,6 @@ def test_missing_api_key(tmp_path):
         load_config(tmp_path)
 
 
-def test_missing_google_api_key(tmp_path):
-    _write(tmp_path, google_key=None)
-    with pytest.raises(ConfigError, match="GEMINI_API_KEY"):
-        load_config(tmp_path)
-
-
 def test_missing_assets_dir(tmp_path):
     _write(tmp_path, make_assets=False)
     with pytest.raises(ConfigError, match="assets_dir does not exist"):
@@ -177,7 +199,7 @@ def test_missing_assets_dir(tmp_path):
 
 def test_bad_aspect(tmp_path):
     _write(tmp_path, toml='projects_dir="projects"\nassets_dir="%s"\naspect="1:1"\n'
-           % (tmp_path / "assets"))
+           % _toml_path(tmp_path / "assets"))
     with pytest.raises(ConfigError, match="aspect must be one of"):
         load_config(tmp_path)
 
@@ -186,7 +208,7 @@ def test_bad_count(tmp_path):
     assets = tmp_path / "assets"
     assets.mkdir()
     (tmp_path / "config.toml").write_text(
-        f'projects_dir="projects"\nassets_dir="{assets}"\n\n[ideate]\ncount=0\n')
+        f'projects_dir="projects"\nassets_dir="{_toml_path(assets)}"\n\n[ideate]\ncount=0\n')
     _write_env(tmp_path)
     with pytest.raises(ConfigError, match="ideate.count must be >= 1"):
         load_config(tmp_path)
@@ -213,7 +235,7 @@ def test_youtube_section_parsed_and_resolved(tmp_path):
     assets = tmp_path / "assets"
     assets.mkdir()
     (tmp_path / "config.toml").write_text(
-        f'projects_dir="projects"\nassets_dir="{assets}"\n\n'
+        f'projects_dir="projects"\nassets_dir="{_toml_path(assets)}"\n\n'
         '[youtube]\nclient_secret = "creds/cs.json"\n'
         'token_path = "sub/tok.json"\ncategory_id = 20\n'
     )
@@ -228,7 +250,7 @@ def test_youtube_bad_category_id(tmp_path):
     assets = tmp_path / "assets"
     assets.mkdir()
     (tmp_path / "config.toml").write_text(
-        f'projects_dir="projects"\nassets_dir="{assets}"\n\n[youtube]\ncategory_id = 0\n'
+        f'projects_dir="projects"\nassets_dir="{_toml_path(assets)}"\n\n[youtube]\ncategory_id = 0\n'
     )
     _write_env(tmp_path)
     with pytest.raises(ConfigError, match="youtube.category_id must be > 0"):

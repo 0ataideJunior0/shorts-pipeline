@@ -28,13 +28,12 @@ python -m shorts status [X]             # show stage + per-idea state
 ideation model, pre-filled in Brazilian Portuguese. Edit it any time; after the
 first `ideate` run, changes need `python -m shorts ideate X --force`.
 
-Narration voice is tuned globally in `config.toml` under `[voice]`: `model`
-(`gemini-2.5-pro-preview-tts` or `gemini-2.5-flash-preview-tts`), `voice` (one
-of Gemini's 30 prebuilt voice names, e.g. `Kore`), and `instructions`
-(free-text tone/style/pacing steering, prefixed onto the narration text before
-synthesis). Changing any of them re-synthesizes affected clips on the next
-`voice` run and regenerates their plan on the next `plan` run — no `--force`
-needed.
+Narration voice is tuned globally in `config.toml` under `[voice]`: `base_url`
+(VoiceStudio server, default `http://localhost:3900`), `model` (engine id,
+e.g. `omnivoice`), `voice` (a voice profile id — your cloned voice), plus
+optional `language`, `speed`, and `instruct`. Changing any of them
+re-synthesizes affected clips on the next `voice` run and regenerates their
+plan on the next `plan` run — no `--force` needed.
 
 `plan` and `render` are separate so you can inspect the shot list before
 spending render time. `plan` writes one `renders/NN-slug.plan.json` per approved
@@ -77,35 +76,38 @@ in the same browser can fire simple cross-origin `POST`s at `127.0.0.1:8765`
 (e.g. `POST /api/projects/<name>/run/<stage>`, which takes no body) — an accepted
 risk for this local-only, single-user tool.
 
-## Narration voice (Gemini TTS)
+## Narration voice (VoiceStudio, local voice cloning)
 
-Narration is synthesized with the Gemini API's native TTS models
-(`gemini-2.5-pro-preview-tts` / `gemini-2.5-flash-preview-tts`), not a
-dedicated Cloud service — so setup is a single API key, no service account or
-OAuth consent screen.
+Narration is synthesized by a local
+[VoiceStudio](https://github.com/debpalash/VoiceStudio) server over its
+OpenAI-compatible `POST /v1/audio/speech` API — runs entirely on your
+machine, no API key, and can use a cloned voice.
 
-### One-time Google setup
+### One-time setup
 
-1. Go to [aistudio.google.com/apikey](https://aistudio.google.com/apikey) and
-   sign in with your Google account.
-2. Click **Create API key** (choose or create any Google Cloud project when
-   prompted — TTS billing rides on that project, no separate API to enable).
-3. Copy the key and add it to `.env`:
-
+1. Install and open VoiceStudio; leave it running (default
+   `http://localhost:3900`) whenever you run `voice`.
+2. Clone or pick a voice inside the app, then find its id:
    ```bash
-   GEMINI_API_KEY=your-key-here
+   curl http://localhost:3900/v1/audio/voices
+   ```
+   Look for your profile's `voice_id` (e.g. `"39f10351"`).
+3. Point `config.toml` at it:
+
+   ```toml
+   [voice]
+   model = "omnivoice"     # or another engine id from GET /engines
+   voice  = "39f10351"     # your cloned voice's id
    ```
 
 ### Use
 
-Nothing else to configure — `python -m shorts voice X` picks up
-`GEMINI_API_KEY` automatically. Tune `model` / `voice` / `instructions` under
-`[voice]` in `config.toml` (see above) and re-run `voice` to hear changes; no
-`--force` needed since narration re-synthesizes when those settings change.
-
-Pricing is per character of input text, billed to the Cloud project behind
-the key ([ai.google.dev/pricing](https://ai.google.dev/pricing) has current
-rates) — check it if you're narrating a high volume of shorts.
+`python -m shorts voice X` calls the running VoiceStudio server directly — no
+API key needed. If the server isn't reachable it fails with a clear error
+telling you to start VoiceStudio first. Tune `model` / `voice` / `language` /
+`speed` / `instruct` under `[voice]` in `config.toml` (see above) and re-run
+`voice` to hear changes; no `--force` needed since narration re-synthesizes
+when those settings change.
 
 ## YouTube publishing
 
