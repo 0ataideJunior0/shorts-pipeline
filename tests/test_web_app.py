@@ -354,6 +354,71 @@ def test_youtube_status_expired(client, monkeypatch):
     assert c.get("/api/youtube/status").get_json()["error"] == "token expired"
 
 
+def test_tiktok_status_not_configured(client):
+    c, _, _ = client
+    body = c.get("/api/tiktok/status").get_json()
+    assert body == {"connected": False, "channel": None, "error": "not configured"}
+
+
+def _tiktok_configured_client(tmp_path):
+    import dataclasses
+    cfg = _config(tmp_path)
+    cfg = dataclasses.replace(
+        cfg, tiktok=dataclasses.replace(cfg.tiktok, client_key="ck", client_secret="cs")
+    )
+    project = Project.create(cfg.projects_dir, "demo")
+    Manifest.new("demo").save(project.manifest_path)
+    project.idea_file("01-x").write_text(_idea_md("01-x", "the script", approved=True))
+    app = create_app(cfg)
+    app.config.update(TESTING=True)
+    return app.test_client(), cfg, project
+
+
+def test_tiktok_status_connected(tmp_path, monkeypatch):
+    c, _cfg, _ = _tiktok_configured_client(tmp_path)
+    import shorts.tiktok as tt
+    monkeypatch.setattr(tt, "get_credentials", lambda c: object())
+    monkeypatch.setattr(tt, "account_label", lambda c: "my_open_id")
+    body = c.get("/api/tiktok/status").get_json()
+    assert body == {"connected": True, "channel": "my_open_id", "error": None}
+
+
+def test_tiktok_status_expired(tmp_path, monkeypatch):
+    c, _cfg, _ = _tiktok_configured_client(tmp_path)
+    import shorts.tiktok as tt
+    monkeypatch.setattr(tt, "get_credentials",
+        lambda c: (_ for _ in ()).throw(tt.TikTokAuthError("x", reason="expired")))
+    assert c.get("/api/tiktok/status").get_json()["error"] == "token expired"
+
+
+def test_unknown_platform_status_404(client):
+    c, _, _ = client
+    assert c.get("/api/bogus/status").status_code == 404
+
+
+def test_unknown_platform_auth_404(client):
+    c, _, _ = client
+    assert c.post("/api/bogus/auth").status_code == 404
+
+
+def test_post_tiktok_auth_builds_argv(fake_client):
+    c, fake = fake_client
+    assert c.post("/api/tiktok/auth").status_code == 202
+    stage, _project, cmd = fake.started[-1]
+    assert stage == "tiktok-auth" and cmd[-2:] == ["tiktok", "auth"]
+
+
+def test_publish_queue_platform_query_param(client):
+    c, _, _ = client
+    resp = c.get("/api/projects/demo/publish?platform=tiktok")
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["items"][0]["slug"] == "01-x"
+
+    bad = c.get("/api/projects/demo/publish?platform=bogus")
+    assert bad.status_code == 400
+
+
 def test_put_cadence_and_queue(client):
     c, _, project = client
     r = c.put("/api/projects/demo/publish/cadence",
