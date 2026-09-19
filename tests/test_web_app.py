@@ -4,7 +4,8 @@ from pathlib import Path
 import pytest
 
 from shorts.config import (
-    Config, IdeateCfg, RenderCfg, SubtitleCfg, TranscribeCfg, VoiceCfg, YouTubeCfg,
+    Config, IdeateCfg, RenderCfg, SubtitleCfg, TikTokCfg, TranscribeCfg, VoiceCfg,
+    YouTubeCfg,
 )
 from shorts.project import Manifest, Project
 from shorts.web.app import create_app
@@ -36,6 +37,11 @@ def _config(tmp_path: Path) -> Config:
         youtube=YouTubeCfg(client_secret=None,
                            token_path=tmp_path / ".youtube_token.json",
                            category_id=22),
+        tiktok=TikTokCfg(client_key=None, client_secret=None,
+                         token_path=tmp_path / ".tiktok_token.json",
+                         privacy_level="SELF_ONLY",
+                         disable_duet=False, disable_stitch=False,
+                         disable_comment=False, is_aigc=False),
     )
 
 

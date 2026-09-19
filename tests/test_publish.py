@@ -136,7 +136,8 @@ def _mk_project(tmp_path, cfg):
 
 def _cfg(tmp_path):
     from shorts.config import (
-        Config, IdeateCfg, RenderCfg, SubtitleCfg, TranscribeCfg, VoiceCfg, YouTubeCfg,
+        Config, IdeateCfg, RenderCfg, SubtitleCfg, TikTokCfg, TranscribeCfg, VoiceCfg,
+        YouTubeCfg,
     )
     (tmp_path / "assets").mkdir()
     cfg = Config(
@@ -154,19 +155,13 @@ def _cfg(tmp_path):
         openai_api_key="sk", youtube=YouTubeCfg(
             client_secret=None, token_path=tmp_path / ".youtube_token.json",
             category_id=22),
+        tiktok=TikTokCfg(
+            client_key=None, client_secret=None,
+            token_path=tmp_path / ".tiktok_token.json", privacy_level="SELF_ONLY",
+            disable_duet=False, disable_stitch=False, disable_comment=False,
+            is_aigc=False,
+        ),
     )
-    # STOPGAP (Task 3, pending Task 4): Config has no `tiktok` field yet, so
-    # `shorts.config.TikTokCfg` doesn't exist. Task 4 will add both; once it
-    # lands, replace this with a real `tiktok=TikTokCfg(...)` kwarg passed
-    # into Config(...) above and delete this SimpleNamespace + import.
-    import types
-    cfg_tiktok = types.SimpleNamespace(
-        client_key=None, client_secret=None,
-        token_path=tmp_path / ".tiktok_token.json", privacy_level="SELF_ONLY",
-        disable_duet=False, disable_stitch=False, disable_comment=False,
-        is_aigc=False,
-    )
-    object.__setattr__(cfg, "tiktok", cfg_tiktok)
     return cfg
 
 
