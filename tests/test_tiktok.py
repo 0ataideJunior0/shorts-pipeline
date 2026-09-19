@@ -121,6 +121,31 @@ def test_get_credentials_refresh_failure_raises_expired(tmp_path, monkeypatch):
     assert ei.value.reason == "expired"
 
 
+def test_get_credentials_refresh_error_shape_raises_clear_auth_error(tmp_path, monkeypatch):
+    """TikTok's token endpoint can return HTTP 200 with an error-shaped body
+    (no access_token) for a revoked/expired refresh token. This must surface
+    as a clear TikTokAuthError, not a raw KeyError."""
+    cfg = _cfg(tmp_path)
+    cfg.tiktok.token_path.write_text(json.dumps({
+        "access_token": "old",
+        "refresh_token": "old-refresh",
+        "expires_at": time.time() - 10,
+    }))
+    payload = json.dumps({
+        "error": "invalid_grant",
+        "error_description": "refresh token expired",
+    }).encode()
+    monkeypatch.setattr(
+        "shorts.tiktok.urllib.request.urlopen",
+        lambda *_a, **_k: _FakeResp(payload),
+    )
+
+    with pytest.raises(TikTokAuthError) as ei:
+        get_credentials(cfg)
+    assert ei.value.reason == "expired"
+    assert "refresh token expired" in str(ei.value)
+
+
 def test_build_post_info_truncates_and_folds_tags():
     kwargs = dict(
         title="x" * 2300,
@@ -263,9 +288,39 @@ def test_upload_video_allows_privacy_level_the_account_permits(tmp_path, monkeyp
     assert len(spy.bodies_for(tiktok._INIT_URL)) == 1
 
 
+def test_upload_video_rejects_when_privacy_level_options_unknown(tmp_path, monkeypatch):
+    """creator_info returning no privacy_level_options (empty/missing key) must
+    fail closed - never silently let the upload attempt through."""
+    mp4 = tmp_path / "v.mp4"
+    mp4.write_bytes(b"\x00" * 16)
+    spy = _PostJsonSpy({
+        tiktok._CREATOR_INFO_URL: {"data": {}},
+        tiktok._INIT_URL: {
+            "data": {"publish_id": "p1", "upload_url": "https://example.test/up"},
+            "error": None,
+        },
+        tiktok._STATUS_URL: {"data": {"status": "PROCESSING_UPLOAD"}},
+    })
+    puts = _wire_upload(monkeypatch, spy)
+
+    body = tiktok.build_post_info(
+        title="t", description="d", tags="", privacy_level="SELF_ONLY",
+        disable_duet=False, disable_stitch=False, disable_comment=False, is_aigc=False,
+    )
+    with pytest.raises(TikTokUploadError) as ei:
+        tiktok.upload_video(
+            {"access_token": "tok"}, mp4_path=mp4, body=body, config=_cfg(tmp_path)
+        )
+
+    assert ei.value.code == "privacy_level_unknown"
+    assert spy.bodies_for(tiktok._INIT_URL) == []
+    assert puts == []
+
+
 def test_parse_upload_error_privacy_level_aborts_batch():
     exc = TikTokUploadError("x", code="privacy_level_not_allowed")
     assert tiktok._parse_upload_error(exc)["abort_batch"] is True
+    assert tiktok._parse_upload_error(TikTokUploadError("y", code="privacy_level_unknown"))["abort_batch"] is True
     assert tiktok._parse_upload_error(TikTokUploadError("y", code="spam"))["abort_batch"] is False
     assert tiktok._parse_upload_error(RuntimeError("boom")) == {
         "message": "boom", "abort_batch": False,

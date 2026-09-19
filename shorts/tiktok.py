@@ -52,6 +52,12 @@ def _save_token(path: Path, token: dict) -> None:
 
 
 def _token_from_response(data: dict) -> dict:
+    if "access_token" not in data:
+        raise TikTokAuthError(
+            f"TikTok token request failed: "
+            f"{data.get('error_description') or data.get('error') or data!r}",
+            reason="expired",
+        )
     return {
         "access_token": data["access_token"],
         "refresh_token": data["refresh_token"],
@@ -209,7 +215,13 @@ def upload_video(client: dict, *, mp4_path: Path, body: dict, config) -> dict:
     info = creator_info(client)
     allowed = set(info.get("privacy_level_options", []))
     wanted = body["post_info"]["privacy_level"]
-    if allowed and wanted not in allowed:
+    if not allowed:
+        raise TikTokUploadError(
+            "TikTok creator_info returned no privacy_level_options - cannot verify "
+            "the account is allowed to post with the configured privacy_level",
+            code="privacy_level_unknown",
+        )
+    if wanted not in allowed:
         raise TikTokUploadError(
             f"privacy_level {wanted!r} not allowed for this account "
             f"(allowed: {sorted(allowed)}) - unaudited apps are usually SELF_ONLY-only",
@@ -240,7 +252,7 @@ def upload_video(client: dict, *, mp4_path: Path, body: dict, config) -> dict:
 
 def _parse_upload_error(exc: Exception) -> dict:
     if isinstance(exc, TikTokUploadError):
-        abort = exc.code in ("privacy_level_not_allowed",) or exc.status == 429
+        abort = exc.code in ("privacy_level_not_allowed", "privacy_level_unknown") or exc.status == 429
         return {"message": str(exc), "abort_batch": abort}
     return {"message": str(exc), "abort_batch": False}
 
