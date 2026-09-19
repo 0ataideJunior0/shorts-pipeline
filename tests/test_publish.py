@@ -414,3 +414,101 @@ def test_run_blank_title_falls_back_to_slug(tmp_path, monkeypatch):
 
     pub.run(project, cfg, target)
     assert seen == ["01-x"]
+
+
+def _fake_tiktok_target(*, upload=None):
+    from functools import partial
+
+    from shorts.publish_target import PublishTarget
+    from shorts.tiktok import build_post_info
+
+    def default_upload(client, *, mp4_path, body):
+        return {"publish_id": "pub123", "status": "PROCESSING_UPLOAD"}
+
+    return PublishTarget(
+        key="tiktok", label="TikTok", supports_scheduling=False,
+        is_configured=lambda c: True,
+        get_credentials=lambda c: object(),
+        authorize=lambda c: object(),
+        account_label=lambda creds: "tiktok_user",
+        build_client=lambda creds: creds,
+        build_body=partial(
+            build_post_info,
+            privacy_level="SELF_ONLY",
+            disable_duet=False,
+            disable_stitch=False,
+            disable_comment=False,
+            is_aigc=False,
+        ),
+        upload=upload or default_upload,
+        parse_upload_error=lambda exc: {"message": str(exc), "abort_batch": False},
+    )
+
+
+def test_run_tiktok_records_under_tiktok_key_with_planned_at(tmp_path):
+    cfg = _cfg(tmp_path)
+    project = _mk_project(tmp_path, cfg)
+    _fresh_rendered_idea(project, "01-x")
+
+    import shorts.publish as pub
+    target = _fake_tiktok_target()
+
+    pub.run(project, cfg, target, slugs=None, force=False)
+
+    manifest = Manifest.load(project.manifest_path)
+    tiktok_record = manifest.get_idea("01-x").get("tiktok")
+    assert tiktok_record is not None
+    assert "publish_id" in tiktok_record
+    assert "status" in tiktok_record
+    assert "uploaded_at" in tiktok_record
+    assert "planned_at" in tiktok_record
+    assert "publish_at" not in tiktok_record
+
+
+def test_run_youtube_and_tiktok_do_not_collide_for_same_idea(tmp_path):
+    cfg = _cfg(tmp_path)
+    project = _mk_project(tmp_path, cfg)
+    _fresh_rendered_idea(project, "01-x")
+
+    import shorts.publish as pub
+
+    # First, publish to YouTube
+    youtube_target = _fake_youtube_target()
+    pub.run(project, cfg, youtube_target, slugs=None, force=False)
+
+    # Reload manifest to see YouTube publication
+    manifest = Manifest.load(project.manifest_path)
+    assert "youtube" in manifest.get_idea("01-x")
+
+    # Then, publish the same idea to TikTok
+    tiktok_target = _fake_tiktok_target()
+    pub.run(project, cfg, tiktok_target, slugs=None, force=False)
+
+    # Both should be present in the final manifest
+    manifest = Manifest.load(project.manifest_path)
+    idea = manifest.get_idea("01-x")
+    assert "youtube" in idea
+    assert idea["youtube"]["video_id"] == "vid123"
+    assert "tiktok" in idea
+    assert idea["tiktok"]["publish_id"] == "pub123"
+
+
+def test_run_tiktok_skips_already_published_unless_force(tmp_path):
+    cfg = _cfg(tmp_path)
+    project = _mk_project(tmp_path, cfg)
+    _fresh_rendered_idea(project, "01-x")
+    m = Manifest.load(project.manifest_path)
+    m.set_idea("01-x", tiktok={"publish_id": "old", "status": "PUBLISHED", "planned_at": None})
+    m.save(project.manifest_path)
+
+    import shorts.publish as pub
+    calls = []
+    def fake_upload(client, *, mp4_path, body):
+        calls.append(1)
+        return {"publish_id": "new", "status": "PROCESSING_UPLOAD"}
+    target = _fake_tiktok_target(upload=fake_upload)
+
+    pub.run(project, cfg, target)                 # skipped
+    assert calls == []
+    pub.run(project, cfg, target, force=True)     # re-uploaded
+    assert calls == [1]
