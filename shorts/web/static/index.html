@@ -745,14 +745,14 @@ async function loadPublishBlock(platform) {
     <button class="btn btn-run" id="pub-all-${platform}" ${pendingN && !unconfigured ? "" : "disabled"}>
       Upload all pending${pendingN ? ` (${pendingN})` : ""}</button>`;
 
-  $(`#connect-${platform}`).onclick = () => {
+  $(`#connect-${platform}`, box).onclick = () => {
     statusCache[platform] = null;
     api("POST", `/api/${platform}/auth`)
       .then(() => toast(`${label} sign-in started — follow the monitor.`))
       .catch((e) => toast(e.message, "err"));
   };
 
-  $(`#pub-all-${platform}`).onclick = async () => {
+  $(`#pub-all-${platform}`, box).onclick = async () => {
     const n = queue.items.filter(canUpload).length;
     const who = label + (status.channel ? ` · ${status.channel}` : "");
     const now = platform === "youtube" ? "" : " They post immediately.";
@@ -789,7 +789,14 @@ async function loadPublishBlock(platform) {
 function renderCadence(queue) {
   const box = $("#cadence");
   if (!box) return;
-  const cad = (queue && queue.cadence) || {};
+  // every platform's queue fetch failed: we don't know the saved cadence, and an
+  // empty-but-live form would let Save write start=null, which the API reads as
+  // "clear the cadence" — wiping real data. Render nothing writable.
+  if (!queue) {
+    box.innerHTML = `<span class="muted">cadence unavailable</span>`;
+    return;
+  }
+  const cad = queue.cadence || {};
   const wd = new Set(cad.weekdays || []);
   const dayBoxes = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d, i) =>
     `<label><input type="checkbox" class="wd-cb" value="${i + 1}" ${wd.has(i + 1) ? "checked" : ""}>${d}</label>`).join("");
