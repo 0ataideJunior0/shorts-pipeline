@@ -401,11 +401,11 @@ def test_post_publish_builds_argv(fake_client):
     c, fake = fake_client
     assert c.post("/api/projects/demo/publish").status_code == 202
     stage, project, cmd = fake.started[-1]
-    assert stage == "publish" and cmd[-1] == "demo" and cmd[1:3] == ["-m", "shorts"]
+    assert stage == "publish" and cmd[-2:] == ["--platform", "youtube"] and cmd[1:3] == ["-m", "shorts"]
     fake.busy = False  # _FakeRunner does not auto-clear after a start
     c.post("/api/projects/demo/ideas/01-x/publish")
     _s, _p, cmd2 = fake.started[-1]
-    assert cmd2[-3:] == ["demo", "--slug", "01-x"]
+    assert cmd2[-6:] == ["publish", "demo", "--platform", "youtube", "--slug", "01-x"]
 
 
 def test_post_youtube_auth_builds_argv(fake_client):
