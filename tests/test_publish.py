@@ -319,8 +319,16 @@ def test_run_isolates_per_idea_failure_aborts_batch_on_quota(tmp_path, monkeypat
     from functools import partial
     from shorts.publish_target import PublishTarget
 
+    calls = []
+
     def flaky(client, *, mp4_path, body):
-        raise RuntimeError("quota exceeded")
+        calls.append(mp4_path.name)
+        if mp4_path.name == "01-x.mp4":
+            raise RuntimeError("quota exceeded")
+        # 02-y would succeed if ever attempted -- proving a wrongly-continuing
+        # implementation would leave a "youtube" key that our assertions below
+        # would then catch.
+        return {"video_id": "v2", "url": "https://youtu.be/v2"}
 
     target = PublishTarget(
         key="youtube", label="YouTube", supports_scheduling=True,
@@ -334,6 +342,10 @@ def test_run_isolates_per_idea_failure_aborts_batch_on_quota(tmp_path, monkeypat
 
     with pytest.raises(SystemExit):
         pub.run(project, cfg, target)
+    # The second idea's upload must never even be attempted: this is what
+    # distinguishes "aborted after the quota error" from "kept going
+    # regardless of abort_batch" (which would call flaky twice).
+    assert calls == ["01-x.mp4"]
     back = Manifest.load(project.manifest_path)
     assert "youtube" not in back.get_idea("01-x")
     assert "youtube" not in back.get_idea("02-y")  # aborted before 02-y ran
