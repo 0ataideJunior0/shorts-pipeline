@@ -245,9 +245,16 @@
   .pub-conn { display:flex; align-items:center; gap:.75rem; margin:.2rem 0 .8rem; font:12.5px var(--mono); }
   .pub-conn .ok { color:var(--ok); }
   .pub-conn .bad { color:var(--fail); }
+  /* one block per platform: a rule + name separates them without shouting */
+  .pub-block { margin:0 0 1.1rem; }
+  .pub-block + .pub-block { border-top:1px solid var(--line); padding-top:.9rem; }
+  .pub-conn .pub-name { font-weight:600; color:var(--ink); letter-spacing:.02em; }
+  .pub-note { margin:-.4rem 0 .7rem; font-size:12.5px; color:var(--ink-dim); }
+  .pub-note code { font:12px var(--mono); }
   .cadence { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; margin:.2rem 0 .9rem; }
   .cadence input[type=number] { width:4rem; }
   .cadence .wd { display:inline-flex; gap:.3rem; font:11px var(--mono); color:var(--ink-dim); }
+  .cadence .cad-note { font-size:12px; }
   .prow { display:flex; align-items:center; gap:.7rem; flex-wrap:wrap; padding:.5rem 0; border-bottom:1px solid var(--line); }
   .prow .pt { flex:1 1 12rem; font-weight:600; font-size:13px; }
   .prow .chip { font:11px var(--mono); padding:.1rem .5rem; border:1px solid var(--line); border-radius:999px; color:var(--ink-dim); }
@@ -330,8 +337,12 @@ let lastLine = "";        // most recent non-empty log line, for the deck tail
 let ticker = null;
 let poller = null;        // fallback GET /api/jobs/current while a job is believed running
 let assetsOpen = false;   // keep the Assets panel open across re-renders
-let ytStatusCache = null; // cached GET /api/youtube/status; reset on project switch / reconnect
+let statusCache = {};     // platform -> cached GET /api/<platform>/status; reset on project switch / reconnect
 const creating = new Set();
+
+// both blocks always render; whichever lacks credentials shows "not configured"
+const PLATFORMS = ["youtube", "tiktok"];
+const PLATFORM_LABELS = { youtube: "YouTube", tiktok: "TikTok" };
 
 function jobHereRunning() {
   return !!(state && state.job && state.job.running && state.job.project === state.name);
@@ -388,7 +399,7 @@ async function loadList() {
 
 /* ---------- one project ---------- */
 async function loadProject(name) {
-  ytStatusCache = null;
+  statusCache = {};
   try {
     state = await api("GET", `/api/projects/${encodeURIComponent(name)}`);
   } catch (err) {
@@ -459,7 +470,12 @@ function render() {
     </details>
 
     <div class="head"><b>Publish</b><span class="fill"></span></div>
-    <div id="pub">loading…</div>`;
+    <div id="pub">
+      <div class="cadence" id="cadence"></div>
+      ${PLATFORMS.map((p) =>
+        `<div class="pub-block" data-platform="${p}"><p class="muted">loading ${PLATFORM_LABELS[p]}…</p></div>`
+      ).join("")}
+    </div>`;
 
   setBusy(runningHere || pending);
   syncMonitor(runningHere);
@@ -683,45 +699,114 @@ function fromLocalInput(v) {
 }
 
 async function loadPublish() {
-  const box = $("#pub");
-  if (!box) return;
+  if (!$("#pub")) return;
+  // both blocks load in parallel; the cadence form is project-global, so it's
+  // rendered once from whichever queue answered first
+  const queues = await Promise.all(PLATFORMS.map((p) => loadPublishBlock(p)));
+  renderCadence(queues.find((q) => q) || null);
+}
+
+async function loadPublishBlock(platform) {
+  const box = document.querySelector(`.pub-block[data-platform="${platform}"]`);
+  if (!box) return null;
+  const label = PLATFORM_LABELS[platform];
+
   let status, queue;
   try {
-    if (!ytStatusCache) ytStatusCache = await api("GET", "/api/youtube/status");
-    status = ytStatusCache;
-    queue = await api("GET", `/api/projects/${encodeURIComponent(state.name)}/publish`);
-  } catch (err) { box.textContent = err.message; return; }
+    if (!statusCache[platform]) statusCache[platform] = await api("GET", `/api/${platform}/status`);
+    status = statusCache[platform];
+    queue = await api("GET",
+      `/api/projects/${encodeURIComponent(state.name)}/publish?platform=${encodeURIComponent(platform)}`);
+  } catch (err) {
+    box.innerHTML = `<div class="pub-conn"><span class="pub-name">${label}</span>
+      <span class="err">${escapeHtml(err.message)}</span></div>`;
+    return null;
+  }
 
+  // no credentials in config.toml at all: nothing here can work yet, so don't
+  // offer buttons that are guaranteed to fail
+  const unconfigured = !status.connected && status.error === "not configured";
   const conn = status.connected
     ? `<span class="ok">connected${status.channel ? " · " + escapeHtml(status.channel) : ""}</span>`
-    : `<span class="bad">${status.error === "token expired" ? "token expired" : status.error === "not configured" ? "not configured" : "not connected"}</span>`;
-  const cad = queue.cadence || {};
+    : `<span class="bad">${status.error === "token expired" ? "token expired" : unconfigured ? "not configured" : "not connected"}</span>`;
+  const pendingN = queue.items.filter(canUpload).length;
+
+  box.innerHTML = `
+    <div class="pub-conn">
+      <span class="pub-name">${label}</span>${conn}
+      <button class="btn" id="connect-${platform}" ${unconfigured ? "disabled" : ""}>${
+        status.connected ? "Reconnect" : "Connect " + label}</button>
+    </div>
+    ${unconfigured
+      ? `<p class="pub-note">Add <code>[${platform}]</code> credentials to config.toml, then connect.</p>`
+      : ""}
+    ${queue.items.map((it) => pubRow(it, platform, unconfigured)).join("")
+      || `<p class="muted">No approved ideas.</p>`}
+    <button class="btn btn-run" id="pub-all-${platform}" ${pendingN && !unconfigured ? "" : "disabled"}>
+      Upload all pending${pendingN ? ` (${pendingN})` : ""}</button>`;
+
+  $(`#connect-${platform}`).onclick = () => {
+    statusCache[platform] = null;
+    api("POST", `/api/${platform}/auth`)
+      .then(() => toast(`${label} sign-in started — follow the monitor.`))
+      .catch((e) => toast(e.message, "err"));
+  };
+
+  $(`#pub-all-${platform}`).onclick = async () => {
+    const n = queue.items.filter(canUpload).length;
+    const who = label + (status.channel ? ` · ${status.channel}` : "");
+    const now = platform === "youtube" ? "" : " They post immediately.";
+    if (!confirm(`Upload ${n} short${n === 1 ? "" : "s"} to ${who}?${now}`)) return;
+    try { await api("POST", `/api/projects/${encodeURIComponent(state.name)}/publish`, { platform }); }
+    catch (err) { toast(err.message, "err"); }
+  };
+
+  // scoped to this block: both blocks carry rows with the same slugs
+  box.querySelectorAll(".prow").forEach((row) => {
+    const slug = row.dataset.slug;
+    const inp = $(".ov", row);
+    if (inp) inp.onchange = async () => {
+      try {
+        await api("PUT",
+          `/api/projects/${encodeURIComponent(state.name)}/ideas/${encodeURIComponent(slug)}/publish-at?platform=${encodeURIComponent(platform)}`,
+          { publish_at: fromLocalInput(inp.value) });
+        loadPublish();  // the override is project-global: reload every block
+      } catch (err) { toast(err.message, "err"); }
+    };
+    const up = $(".up-one", row);
+    if (up) up.onclick = async () => {
+      try {
+        await api("POST",
+          `/api/projects/${encodeURIComponent(state.name)}/ideas/${encodeURIComponent(slug)}/publish`,
+          { platform });
+      } catch (err) { toast(err.message, "err"); }
+    };
+  });
+
+  return queue;
+}
+
+function renderCadence(queue) {
+  const box = $("#cadence");
+  if (!box) return;
+  const cad = (queue && queue.cadence) || {};
   const wd = new Set(cad.weekdays || []);
   const dayBoxes = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d, i) =>
     `<label><input type="checkbox" class="wd-cb" value="${i + 1}" ${wd.has(i + 1) ? "checked" : ""}>${d}</label>`).join("");
 
   box.innerHTML = `
-    <div class="pub-conn">${conn}
-      <button class="btn" id="yt-connect">${status.connected ? "Reconnect" : "Connect YouTube"}</button></div>
-    <div class="cadence">
-      <span class="muted">start</span>
-      <input type="datetime-local" id="cad-start" value="${toLocalInput(cad.start)}">
-      <span class="muted">every</span>
-      <input type="number" id="cad-int" min="1" value="${cad.interval_hours || 24}">
-      <span class="muted">hours</span>
-      <span class="wd">${dayBoxes}</span>
-      <button class="btn" id="cad-save">Save schedule</button>
-    </div>
-    ${queue.items.map(pubRow).join("") || `<p class="muted">No approved ideas.</p>`}
-    <button class="btn btn-run" id="pub-all" ${queue.items.some(canUpload) ? "" : "disabled"}>Upload all pending</button>`;
+    <span class="muted">start</span>
+    <input type="datetime-local" id="cad-start" value="${toLocalInput(cad.start)}">
+    <span class="muted">every</span>
+    <input type="number" id="cad-int" min="1" value="${cad.interval_hours || 24}">
+    <span class="muted">hours</span>
+    <span class="wd">${dayBoxes}</span>
+    <button class="btn" id="cad-save">Save schedule</button>
+    <span class="muted cad-note">one schedule, shared by every platform</span>`;
 
-  $("#yt-connect").onclick = () => {
-    api("POST", "/api/youtube/auth").catch((e) => toast(e.message, "err"));
-    ytStatusCache = null;
-  };
   $("#cad-save").onclick = async () => {
     const start = fromLocalInput($("#cad-start").value);
-    const weekdays = [...document.querySelectorAll(".wd-cb:checked")].map((c) => +c.value);
+    const weekdays = [...box.querySelectorAll(".wd-cb:checked")].map((c) => +c.value);
     try {
       await api("PUT", `/api/projects/${encodeURIComponent(state.name)}/publish/cadence`,
         { start, interval_hours: +$("#cad-int").value, weekdays: weekdays.length ? weekdays : null });
@@ -729,50 +814,41 @@ async function loadPublish() {
       loadPublish();
     } catch (err) { toast(err.message, "err"); }
   };
-  $("#pub-all").onclick = async () => {
-    const n = queue.items.filter(canUpload).length;
-    if (!confirm(`Upload ${n} short${n === 1 ? "" : "s"} to ${status.channel || "YouTube"}?`)) return;
-    try { await api("POST", `/api/projects/${encodeURIComponent(state.name)}/publish`); }
-    catch (err) { toast(err.message, "err"); }
-  };
-  document.querySelectorAll(".prow").forEach((row) => {
-    const slug = row.dataset.slug;
-    const inp = $(".ov", row);
-    if (inp) inp.onchange = async () => {
-      try {
-        await api("PUT",
-          `/api/projects/${encodeURIComponent(state.name)}/ideas/${encodeURIComponent(slug)}/publish-at`,
-          { publish_at: fromLocalInput(inp.value) });
-        loadPublish();
-      } catch (err) { toast(err.message, "err"); }
-    };
-    const up = $(".up-one", row);
-    if (up) up.onclick = async () => {
-      try { await api("POST",
-        `/api/projects/${encodeURIComponent(state.name)}/ideas/${encodeURIComponent(slug)}/publish`); }
-      catch (err) { toast(err.message, "err"); }
-    };
-  });
 }
 
 function canUpload(it) {
-  return it.render === "fresh" && !it.youtube;
+  return it.render === "fresh" && !it.platform;
 }
 
-function pubRow(it) {
+function pubRow(it, platform, unconfigured) {
+  const done = it.platform;
   let chip;
-  if (it.youtube) chip = `<a class="chip up" href="https://www.youtube.com/watch?v=${encodeURIComponent(it.youtube.video_id)}">uploaded ↗</a>`;
-  else if (it.render === "missing") chip = `<span class="chip bad">not rendered</span>`;
-  else if (it.render === "stale") chip = `<span class="chip bad">stale render</span>`;
-  else if (it.publish_at) chip = `<span class="chip sched">scheduled ${escapeHtml(toLocalInput(it.publish_at).replace("T", " "))}</span>`;
-  else chip = `<span class="chip">draft</span>`;
+  if (done && platform === "youtube" && done.video_id) {
+    chip = `<a class="chip up" href="https://www.youtube.com/watch?v=${encodeURIComponent(done.video_id)}">uploaded ↗</a>`;
+  } else if (done) {
+    // TikTok's API hands back no public share URL — a plain chip, id as tooltip
+    const ref = done.publish_id || done.video_id || done.uploaded_at || "";
+    chip = `<span class="chip up"${ref ? ` title="${escapeHtml(ref)}"` : ""}>uploaded</span>`;
+  } else if (it.render === "missing") {
+    chip = `<span class="chip bad">not rendered</span>`;
+  } else if (it.render === "stale") {
+    chip = `<span class="chip bad">stale render</span>`;
+  } else if (it.publish_at) {
+    const when = escapeHtml(toLocalInput(it.publish_at).replace("T", " "));
+    // "planned" on platforms that can't schedule: the slot is ours, not theirs
+    chip = platform === "youtube"
+      ? `<span class="chip sched">scheduled ${when}</span>`
+      : `<span class="chip sched" title="${PLATFORM_LABELS[platform] || platform} posts as soon as you upload">planned ${when}</span>`;
+  } else {
+    chip = `<span class="chip">draft</span>`;
+  }
   const ovVal = toLocalInput(it.publish_at_override);
   const hint = !it.publish_at_override && it.publish_at ? ` title="cadence: ${escapeHtml(it.publish_at)}"` : "";
   return `<div class="prow" data-slug="${escapeHtml(it.slug)}">
     <span class="pt">${escapeHtml(it.title)}</span>
     ${chip}
     <input type="datetime-local" class="ov" value="${ovVal}"${hint}>
-    <button class="btn up-one" ${canUpload(it) ? "" : "disabled"}>Upload</button>
+    <button class="btn up-one" ${canUpload(it) && !unconfigured ? "" : "disabled"}>Upload</button>
   </div>`;
 }
 
