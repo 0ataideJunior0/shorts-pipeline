@@ -26,9 +26,12 @@ class IdeateCfg:
 
 @dataclass(frozen=True)
 class VoiceCfg:
+    base_url: str
     model: str
     voice: str
-    instructions: str | None
+    language: str | None
+    speed: float
+    instruct: str | None
 
 
 @dataclass(frozen=True)
@@ -71,7 +74,6 @@ class Config:
     voice: VoiceCfg
     render: RenderCfg
     openai_api_key: str
-    google_api_key: str
     youtube: YouTubeCfg
 
 
@@ -160,9 +162,6 @@ def load_config(root: Path | None = None) -> Config:
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not api_key:
         raise ConfigError("OPENAI_API_KEY is not set (put it in .env)")
-    google_api_key = os.environ.get("GEMINI_API_KEY", "").strip()
-    if not google_api_key:
-        raise ConfigError("GEMINI_API_KEY is not set (put it in .env)")
 
     if "projects_dir" not in raw:
         raise ConfigError("config.toml missing required key: projects_dir")
@@ -197,9 +196,17 @@ def load_config(root: Path | None = None) -> Config:
 
     subtitle = _subtitle_cfg(r.get("subtitle", {}))
 
-    voice_instructions = v.get("instructions")
-    if voice_instructions is not None:
-        voice_instructions = str(voice_instructions).strip() or None
+    voice_instruct = v.get("instruct")
+    if voice_instruct is not None:
+        voice_instruct = str(voice_instruct).strip() or None
+
+    voice_speed = float(v.get("speed", 1.0))
+    if voice_speed <= 0:
+        raise ConfigError("voice.speed must be > 0")
+
+    voice_language = v.get("language")
+    if voice_language is not None:
+        voice_language = str(voice_language)
 
     yt = raw.get("youtube", {})
     yt_secret = yt.get("client_secret")
@@ -221,13 +228,15 @@ def load_config(root: Path | None = None) -> Config:
         transcribe=TranscribeCfg(model=str(t.get("model", "whisper-1"))),
         ideate=IdeateCfg(model=str(i.get("model", "gpt-4.1")), count=count),
         voice=VoiceCfg(
-            model=str(v.get("model", "gemini-2.5-pro-preview-tts")),
-            voice=str(v.get("voice", "Kore")),
-            instructions=voice_instructions,
+            base_url=str(v.get("base_url", "http://localhost:3900")),
+            model=str(v.get("model", "omnivoice")),
+            voice=str(v.get("voice", "default")),
+            language=voice_language,
+            speed=voice_speed,
+            instruct=voice_instruct,
         ),
         render=RenderCfg(min_beat_duration=min_beat, subtitle=subtitle),
         openai_api_key=api_key,
-        google_api_key=google_api_key,
         youtube=YouTubeCfg(
             client_secret=yt_secret,
             token_path=yt_token,

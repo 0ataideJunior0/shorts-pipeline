@@ -11,10 +11,15 @@ model = "gpt-4.1"
 count = 6
 
 [voice]
-model = "gemini-2.5-pro-preview-tts"   # or gemini-2.5-flash-preview-tts (faster, cheaper)
-voice = "Kore"   # Zephyr Puck Charon Kore Fenrir Leda Orus Aoede ... (30 prebuilt voices)
-# instructions = "Narre em pt-BR num tom calmo e confiante, com ritmo pausado."
-#   free-text tone/style/pacing steering, prefixed onto the narration text
+# Local VoiceStudio server (https://github.com/debpalash/VoiceStudio) - must be
+# running before `voice`. base_url defaults to VoiceStudio's default port.
+# base_url = "http://localhost:3900"
+model = "omnivoice"   # engine id from GET /engines (e.g. omnivoice, voxcpm2, cosyvoice)
+voice  = "39f10351"   # voice profile id from GET /v1/audio/voices (your cloned voice)
+# language = "pt"      # ISO 639-1 code; omit to let the engine auto-detect
+# speed = 1.0          # 0.25 - 4.0
+# instruct = "Narre num tom calmo e confiante, com ritmo pausado."
+#   free-text style instruction sent to the engine (support varies by engine)
 
 [render]
 min_beat_duration = 3.0

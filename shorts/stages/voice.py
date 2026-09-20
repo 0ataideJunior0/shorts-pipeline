@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from shorts.config import Config
-from shorts.gemini_tts import get_client, synthesize_speech, voice_params_hash
 from shorts.ideas import sync_idea_state
 from shorts.project import Manifest, Project
+from shorts.voicestudio_tts import synthesize_speech, voice_params_hash
 
 
 def run(project: Project, config: Config, *, force: bool = False) -> None:
@@ -18,10 +18,11 @@ def run(project: Project, config: Config, *, force: bool = False) -> None:
     params_hash = voice_params_hash(
         model=config.voice.model,
         voice=config.voice.voice,
-        instructions=config.voice.instructions,
+        language=config.voice.language,
+        speed=config.voice.speed,
+        instruct=config.voice.instruct,
     )
 
-    client = None
     made = 0
     for slug, parsed in ideas:
         entry = manifest.get_idea(slug)
@@ -44,16 +45,16 @@ def run(project: Project, config: Config, *, force: bool = False) -> None:
             continue
 
         project.voice_dir.mkdir(parents=True, exist_ok=True)
-        if client is None:
-            client = get_client(config.google_api_key)
         print(f"voice: synthesizing {slug}")
         synthesize_speech(
-            client,
+            base_url=config.voice.base_url,
             text=parsed.narration,
             out_path=project.voice_file(slug),
             model=config.voice.model,
             voice=config.voice.voice,
-            instructions=config.voice.instructions,
+            language=config.voice.language,
+            speed=config.voice.speed,
+            instruct=config.voice.instruct,
         )
         manifest.set_idea(
             slug,
