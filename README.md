@@ -21,6 +21,7 @@ python -m shorts plan X                 # ai-vedit plan -> renders/NN-slug.plan.
 python -m shorts render X               # ai-vedit render (from the plan) -> renders/NN-slug.mp4
 python -m shorts youtube auth           # one-time Google OAuth consent -> saves a token
 python -m shorts publish X              # upload approved+rendered shorts (private + scheduled)
+python -m shorts publish X --platform tiktok   # same queue to TikTok (after `tiktok auth`)
 python -m shorts status [X]             # show stage + per-idea state
 ```
 
@@ -144,6 +145,48 @@ The Testing-mode refresh token lapses after ~7 days — re-run `youtube auth` wh
 `publish` says the token expired. Videos already uploaded and scheduled publish
 on time regardless. Quota is ~6 uploads/day. Publishing is always an explicit
 action; nothing else in the pipeline touches YouTube.
+
+## TikTok publishing
+
+Upload rendered shorts to your own TikTok account through the Content Posting
+API (Direct Post). Unlike YouTube, TikTok has no scheduling: each upload posts
+**immediately**, and the cadence / planned-time fields don't apply to it.
+
+### One-time TikTok setup
+
+1. developers.tiktok.com → create an app and add the **Login Kit** and
+   **Content Posting API** products; request the `video.publish` scope.
+2. Under Login Kit → **Desktop**, register the redirect URI
+   `http://127.0.0.1:*` (loopback with a wildcard port; `tiktok auth` picks a
+   free port each run and uses PKCE).
+3. Put the app's credentials in `.env`:
+
+   ```
+   TIKTOK_CLIENT_KEY=...
+   TIKTOK_CLIENT_SECRET=...
+   ```
+
+4. Optionally tune `[tiktok]` in `config.toml` (see `config.example.toml`).
+
+An **unaudited** app can only post with `privacy_level = "SELF_ONLY"` (the
+default), and the posted videos stay private to your account. Getting
+`PUBLIC_TO_EVERYONE` requires passing TikTok's app audit. `publish` checks the
+account's allowed privacy levels via `creator_info` before uploading and stops
+the whole batch if the configured one isn't allowed.
+
+### Use
+
+```bash
+python -m shorts tiktok auth        # one browser consent; saves .tiktok_token.json
+python -m shorts tiktok status      # is a token present?
+python -m shorts publish X --platform tiktok
+python -m shorts publish X --platform tiktok --slug 01-foo   # just one
+```
+
+or the **TikTok** block of the **Publish** panel in the web UI. Each idea's
+YouTube and TikTok uploads are tracked separately, so publishing to one never
+marks the other as done. The token file is git-ignored; keep it out of shared
+folders.
 
 ## Setup
 
