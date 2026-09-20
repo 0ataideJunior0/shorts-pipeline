@@ -21,6 +21,30 @@ def test_youtube_status_connected(monkeypatch):
     assert "connected: My Channel" in r.output
 
 
+def test_youtube_status_channel_lookup_fails_gracefully(monkeypatch):
+    _no_config(monkeypatch)
+    import shorts.youtube as yt
+    monkeypatch.setattr(yt, "get_credentials", lambda c: object())
+    def boom(c):
+        raise RuntimeError("insufficient scope")
+    monkeypatch.setattr(yt, "channel_title", boom)
+    r = CliRunner().invoke(cli.cli, ["youtube", "status"])
+    assert r.exit_code == 0
+    assert "connected" in r.output
+
+
+def test_youtube_auth_channel_lookup_fails_gracefully(monkeypatch):
+    _no_config(monkeypatch)
+    import shorts.youtube as yt
+    monkeypatch.setattr(yt, "authorize", lambda c: object())
+    def boom(c):
+        raise RuntimeError("insufficient scope")
+    monkeypatch.setattr(yt, "channel_title", boom)
+    r = CliRunner().invoke(cli.cli, ["youtube", "auth"])
+    assert r.exit_code == 0
+    assert "connected" in r.output
+
+
 def test_youtube_status_needs_auth(monkeypatch):
     _no_config(monkeypatch)
     import shorts.youtube as yt

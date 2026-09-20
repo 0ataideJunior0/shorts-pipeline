@@ -21,7 +21,10 @@ def _config(tmp_path):
         aspect="9:16",
         transcribe=TranscribeCfg(model="whisper-1"),
         ideate=IdeateCfg(model="gpt-4.1", count=6),
-        voice=VoiceCfg(model="m", voice="Kore", instructions=None),
+        voice=VoiceCfg(
+            base_url="http://localhost:3900", model="m", voice="v",
+            language=None, speed=1.0, instruct=None,
+        ),
         render=RenderCfg(
             min_beat_duration=3.0,
             subtitle=SubtitleCfg(
@@ -32,7 +35,6 @@ def _config(tmp_path):
             ),
         ),
         openai_api_key="sk-test",
-        google_api_key="gm-test",
         youtube=YouTubeCfg(client_secret=None,
                            token_path=tmp_path / ".youtube_token.json",
                            category_id=22),

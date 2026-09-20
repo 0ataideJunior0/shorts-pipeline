@@ -182,7 +182,11 @@ def youtube_auth(ctx: click.Context) -> None:
         creds = authorize(config)
     except YouTubeConfigError as exc:
         raise click.ClickException(str(exc))
-    click.echo(f"connected: {channel_title(creds) or '(no channel name)'}")
+    try:
+        name = channel_title(creds) or "(no channel name)"
+    except Exception:
+        name = "(channel name unavailable)"
+    click.echo(f"connected: {name}")
 
 
 @youtube.command("status")
@@ -197,7 +201,11 @@ def youtube_status(ctx: click.Context) -> None:
     except YouTubeAuthError as exc:
         click.echo(str(exc))
         return
-    click.echo(f"connected: {channel_title(creds) or '(no channel name)'}")
+    try:
+        name = channel_title(creds) or "(no channel name)"
+    except Exception:
+        name = "(channel name unavailable)"
+    click.echo(f"connected: {name}")
 
 
 @cli.command()
