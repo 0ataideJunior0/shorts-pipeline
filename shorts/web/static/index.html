@@ -59,6 +59,11 @@
   .btn:disabled { opacity:.45; cursor:default; }
   .btn-run { background:var(--run); border-color:var(--run); color:#20160a; font-weight:600; }
   .btn-run:hover:not(:disabled) { filter:brightness(1.07); }
+  .btn-primary { background:var(--sel); border-color:var(--sel); color:#0f1216; font-weight:600; }
+  .btn-primary:hover:not(:disabled) { filter:brightness(1.08); }
+  @media (prefers-color-scheme: light) {
+    .btn-primary { color:#ffffff; }
+  }
   .btn-stop { background:transparent; border-color:var(--fail); color:var(--fail); }
   .btn-stop:hover:not(:disabled) { background:var(--fail-tint); }
 
@@ -149,6 +154,16 @@
   .frow .fr.fresh { color:var(--ok); }
   .frow .fr.stale { color:var(--run); }
   .field-lbl { display:block; margin:.6rem 0 .15rem; font:11px var(--mono); color:var(--ink-dim); }
+  .field-hdr { display:flex; align-items:center; justify-content:space-between; margin:.6rem 0 .15rem; }
+  .field-hdr .field-lbl { margin:0; }
+  .refine-btn {
+    font-size:11.5px; font-family:var(--sans); padding:3px 8px;
+    background:transparent; border:1px solid var(--line); color:var(--ink-dim);
+    border-radius:5px; line-height:1.2;
+  }
+  .refine-btn:hover:not(:disabled) {
+    color:var(--ink); border-color:var(--sel); background:var(--panel-2);
+  }
   .card .tags-in { width:100%; font:12.5px var(--mono); padding:7px 9px; }
   .tabs { display:flex; gap:0; margin:.7rem 0 0; border-bottom:1px solid var(--line); }
   .tab {
@@ -241,6 +256,17 @@
   .toast.err { border-left-color:var(--fail); }
   @keyframes toast-in { from { opacity:0; transform:translateY(6px); } }
 
+  /* ---- refine modal ---- */
+  #refine-modal {
+    background:var(--panel); color:var(--ink);
+    border:1px solid var(--line); border-radius:8px;
+    padding:1.2rem; max-width:28rem; width:90%;
+    box-shadow:0 16px 36px -10px rgba(0,0,0,.6);
+  }
+  #refine-modal::backdrop {
+    background:rgba(0,0,0,0.6);
+  }
+
   /* ---- publish panel ---- */
   .pub-conn { display:flex; align-items:center; gap:.75rem; margin:.2rem 0 .8rem; font:12.5px var(--mono); }
   .pub-conn .ok { color:var(--ok); }
@@ -284,6 +310,18 @@
   </section>
 </div>
 <div id="bar" hidden></div>
+
+<dialog id="refine-modal">
+  <h3 id="refine-modal-title" style="margin:0 0 .4rem">Refine with AI</h3>
+  <p class="muted" id="refine-modal-sub" style="font-size:12px; margin:0 0 .8rem">Provide optional instructions to guide the AI, or leave blank.</p>
+  <label class="field-lbl">Prompt / Instructions (optional)</label>
+  <textarea id="refine-prompt-input" rows="3" style="width:100%" placeholder="e.g. make it punchier, under 50 chars, add mystery..."></textarea>
+  <div style="display:flex; justify-content:flex-end; gap:.5rem; margin-top:.8rem">
+    <button type="button" class="btn" id="refine-cancel-btn">Cancel</button>
+    <button type="button" class="btn btn-primary" id="refine-submit-btn">Refine with AI</button>
+  </div>
+</dialog>
+
 <div id="toasts"></div>
 
 <script>
@@ -543,13 +581,14 @@ function ideaCard(idea) {
   return `<div class="card" data-slug="${escapeHtml(idea.slug)}">
     <div class="card-top">
       <input class="title-in" value="${escapeHtml(idea.title)}" aria-label="video title">
+      <button type="button" class="btn refine-btn" data-field="title" title="Refine title with AI">✨ Refine</button>
       <label class="approve"><input type="checkbox" class="approved" ${idea.approved ? "checked" : ""}> approved</label>
       <span class="frow">${fr("voice")}${fr("plan")}${fr("render")}</span>
     </div>
     ${audio}
-    <label class="field-lbl">description</label>
+    <div class="field-hdr"><label class="field-lbl">description</label><button type="button" class="btn refine-btn" data-field="description" title="Refine description with AI">✨ Refine</button></div>
     <textarea class="desc-in" rows="2">${escapeHtml(idea.description || "")}</textarea>
-    <label class="field-lbl">tags &nbsp;<span class="muted">comma-separated, for the YouTube upload</span></label>
+    <div class="field-hdr"><label class="field-lbl">tags &nbsp;<span class="muted">comma-separated, for the YouTube upload</span></label><button type="button" class="btn refine-btn" data-field="tags" title="Refine tags with AI">✨ Refine</button></div>
     <input class="tags-in" value="${escapeHtml(idea.tags || "")}" aria-label="youtube tags">
     <button class="btn save-idea">Save idea</button>
     ${tabs}
@@ -607,6 +646,11 @@ function wire() {
     card.querySelectorAll(".tab").forEach((t) => t.onclick = () => {
       ideaView.set(slug, t.dataset.view);
       render();
+    });
+    card.querySelectorAll(".refine-btn").forEach((btn) => {
+      btn.onclick = () => {
+        openRefineModal(slug, btn.dataset.field, card);
+      };
     });
     $(".approved", card).onchange = async (e) => {
       const want = e.target.checked;
@@ -873,6 +917,106 @@ es.onerror = () => {
   log.scrollTop = log.scrollHeight;
 };
 
+/* ---------- refine modal ---------- */
+let activeRefine = null; // { slug, field, card }
+
+function openRefineModal(slug, field, card) {
+  activeRefine = { slug, field, card };
+  const modal = $("#refine-modal");
+  const titleEl = $("#refine-modal-title");
+  const promptInput = $("#refine-prompt-input");
+  if (titleEl) {
+    titleEl.textContent = `Refine ${field.charAt(0).toUpperCase() + field.slice(1)} with AI`;
+  }
+  if (promptInput) {
+    promptInput.value = "";
+  }
+  if (modal && modal.showModal) {
+    modal.showModal();
+    if (promptInput) promptInput.focus();
+  }
+}
+
+function wireRefineModal() {
+  const modal = $("#refine-modal");
+  const cancelBtn = $("#refine-cancel-btn");
+  const submitBtn = $("#refine-submit-btn");
+  const promptInput = $("#refine-prompt-input");
+
+  if (cancelBtn) {
+    cancelBtn.onclick = () => {
+      if (modal && modal.close) modal.close();
+    };
+  }
+
+  if (modal) {
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal && modal.close) modal.close();
+    });
+  }
+
+  if (promptInput && submitBtn) {
+    promptInput.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        submitBtn.click();
+      }
+    });
+  }
+
+  if (submitBtn) {
+    submitBtn.onclick = async () => {
+      if (!activeRefine || !state) return;
+      const { slug, field, card } = activeRefine;
+      const promptVal = promptInput ? promptInput.value.trim() : "";
+
+      submitBtn.disabled = true;
+      if (cancelBtn) cancelBtn.disabled = true;
+      submitBtn.textContent = "Refining...";
+
+      try {
+        const current_title = $(".title-in", card) ? $(".title-in", card).value : "";
+        const current_description = $(".desc-in", card) ? $(".desc-in", card).value : "";
+        const current_tags = $(".tags-in", card) ? $(".tags-in", card).value : "";
+
+        const res = await api(
+          "POST",
+          `/api/projects/${encodeURIComponent(state.name)}/ideas/${encodeURIComponent(slug)}/refine`,
+          {
+            field,
+            prompt: promptVal,
+            current_title,
+            current_description,
+            current_tags,
+          }
+        );
+
+        if (field === "title") {
+          const el = $(".title-in", card);
+          if (el) el.value = res.result;
+        } else if (field === "description") {
+          const el = $(".desc-in", card);
+          if (el) el.value = res.result;
+        } else if (field === "tags") {
+          const el = $(".tags-in", card);
+          if (el) el.value = res.result;
+        }
+
+        if (modal && modal.close) modal.close();
+        const cap = field.charAt(0).toUpperCase() + field.slice(1);
+        toast(`${cap} refined with AI`);
+      } catch (err) {
+        toast(err.message, "err");
+      } finally {
+        submitBtn.disabled = false;
+        if (cancelBtn) cancelBtn.disabled = false;
+        submitBtn.textContent = "Refine with AI";
+      }
+    };
+  }
+}
+
+wireRefineModal();
 window.addEventListener("hashchange", route);
 route();
 </script>

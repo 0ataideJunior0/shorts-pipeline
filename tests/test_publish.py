@@ -284,13 +284,18 @@ def test_run_slug_upload_matches_web_queue_preview(tmp_path, monkeypatch):
     _fresh_rendered_idea(project, "01-x", "First")
     _fresh_rendered_idea(project, "02-y", "Second")
 
+    start_dt = datetime.now(UTC).replace(hour=9, minute=0, second=0, microsecond=0) + timedelta(
+        days=365
+    )
+    start = iso(start_dt)
     m = Manifest.load(project.manifest_path)
-    m.set_publish(start="2026-09-20T09:00:00Z", interval_hours=24, weekdays=None)
+    m.set_publish(start=start, interval_hours=24, weekdays=None)
     m.save(project.manifest_path)
 
     from shorts.web.state import publish_queue
     preview = {it["slug"]: it["publish_at"] for it in publish_queue(project, cfg)["items"]}
-    assert preview["02-y"] == "2026-09-21T09:00:00Z"
+    expected_slot = iso(start_dt + timedelta(days=1))
+    assert preview["02-y"] == expected_slot
 
     import shorts.publish as pub
     monkeypatch.setattr(pub, "get_credentials", lambda c: object())
@@ -304,7 +309,7 @@ def test_run_slug_upload_matches_web_queue_preview(tmp_path, monkeypatch):
     pub.run(project, cfg, slugs=["02-y"])
 
     assert [s[0] for s in seen] == ["02-y.mp4"]
-    assert seen[0][1] == "2026-09-21T09:00:00Z"
+    assert seen[0][1] == expected_slot
     back = Manifest.load(project.manifest_path)
     assert back.get_idea("02-y")["youtube"]["publish_at"] == preview["02-y"]
 

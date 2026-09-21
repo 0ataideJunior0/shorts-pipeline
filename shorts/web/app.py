@@ -12,7 +12,8 @@ from shorts.config import Config
 from shorts.web.edits import (
     EditError, apply_idea_edit, build_prompt_json, validate_plan_text,
 )
-from shorts.markdown import set_approved
+from shorts.markdown import _section, parse_idea_file, set_approved
+from shorts.openai_helpers import get_client, refine_idea_text
 from shorts.project import Manifest, Project, slugify
 from shorts.web.jobs import (
     ALLOWED_STAGES, JobBusy, JobRunner, _HEARTBEAT_SECONDS, sse_format, stage_argv,
@@ -133,6 +134,67 @@ def create_app(config: Config) -> Flask:
             return _json_error(422, f"unexpected idea file format: {exc}")
         _atomic_write(idea_path, new_text)
         return _snapshot(project)
+
+    @app.post("/api/projects/<name>/ideas/<slug>/refine")
+    def api_refine_idea(name: str, slug: str):
+        try:
+            project = _load_project(config, name)
+        except FileNotFoundError:
+            return _json_error(404, f"no such project: {name}")
+        idea_path = project.idea_file(slug)
+        if not idea_path.exists():
+            return _json_error(404, f"no such idea: {slug}")
+
+        body = request.get_json(silent=True) or {}
+        field = body.get("field")
+        if field not in ("title", "description", "tags"):
+            return _json_error(422, "field must be one of: title, description, tags")
+
+        if not config.openai_api_key:
+            return _json_error(500, "OPENAI_API_KEY is not configured")
+
+        text = idea_path.read_text(encoding="utf-8")
+        parsed = parse_idea_file(text)
+        hook = _section(text, "Hook")
+
+        current_title = body.get("current_title")
+        if current_title is None:
+            current_title = parsed.frontmatter.get("title", "") or ""
+
+        current_description = body.get("current_description")
+        if current_description is None:
+            current_description = parsed.description or ""
+
+        current_tags = body.get("current_tags")
+        if current_tags is None:
+            current_tags = parsed.tags or ""
+
+        video_title = project.name
+        if project.manifest_path.exists():
+            try:
+                manifest = Manifest.load(project.manifest_path)
+                video_title = manifest.source.get("title") or project.name
+            except Exception:
+                video_title = project.name
+
+        try:
+            client = get_client(config.openai_api_key)
+            refined = refine_idea_text(
+                client,
+                field=field,
+                user_prompt=str(body.get("prompt", "") or ""),
+                current_title=str(current_title),
+                current_description=str(current_description),
+                current_tags=str(current_tags),
+                narration=parsed.narration,
+                hook=hook,
+                video_title=video_title,
+                model=config.ideate.model,
+            )
+        except Exception as exc:
+            return _json_error(500, str(exc))
+
+        return jsonify({"field": field, "result": refined}), 200
 
     @app.get("/api/projects/<name>/voice/<slug>")
     def api_voice(name: str, slug: str):

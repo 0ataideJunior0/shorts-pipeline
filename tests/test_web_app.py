@@ -112,6 +112,10 @@ def test_index_served(client):
     resp = c.get("/")
     assert resp.status_code == 200
     assert b"EventSource" in resp.data
+    assert b'<dialog id="refine-modal">' in resp.data
+    assert b"refine-btn" in resp.data
+    assert b"refine-prompt-input" in resp.data
+    assert b"/refine" in resp.data
 
 
 def test_put_prompt_writes_file(client):
@@ -407,3 +411,137 @@ def test_post_youtube_auth_builds_argv(fake_client):
     assert c.post("/api/youtube/auth").status_code == 202
     stage, _project, cmd = fake.started[-1]
     assert stage == "youtube-auth" and cmd[-2:] == ["youtube", "auth"]
+
+
+def test_post_refine_title(client, monkeypatch):
+    c, _, _ = client
+    import shorts.web.app as web_app
+
+    monkeypatch.setattr(web_app, "refine_idea_text", lambda *args, **kwargs: "Punchy New Title")
+    resp = c.post("/api/projects/demo/ideas/01-x/refine", json={"field": "title"})
+    assert resp.status_code == 200
+    assert resp.get_json() == {"field": "title", "result": "Punchy New Title"}
+
+
+def test_post_refine_description(client, monkeypatch):
+    c, _, _ = client
+    import shorts.web.app as web_app
+
+    monkeypatch.setattr(web_app, "refine_idea_text", lambda *args, **kwargs: "Engaging new description.")
+    resp = c.post("/api/projects/demo/ideas/01-x/refine", json={"field": "description"})
+    assert resp.status_code == 200
+    assert resp.get_json() == {"field": "description", "result": "Engaging new description."}
+
+
+def test_post_refine_tags(client, monkeypatch):
+    c, _, _ = client
+    import shorts.web.app as web_app
+
+    monkeypatch.setattr(web_app, "refine_idea_text", lambda *args, **kwargs: "tag1, tag2, tag3")
+    resp = c.post("/api/projects/demo/ideas/01-x/refine", json={"field": "tags"})
+    assert resp.status_code == 200
+    assert resp.get_json() == {"field": "tags", "result": "tag1, tag2, tag3"}
+
+
+def test_post_refine_with_prompt_and_current_values(client, monkeypatch):
+    c, _, project = client
+    manifest = Manifest.load(project.manifest_path)
+    manifest.source = {"title": "Source Video"}
+    manifest.save(project.manifest_path)
+
+    import shorts.web.app as web_app
+    recorded_kwargs = {}
+
+    def mock_refine(*args, **kwargs):
+        recorded_kwargs.update(kwargs)
+        return "Refined Result"
+
+    monkeypatch.setattr(web_app, "refine_idea_text", mock_refine)
+
+    resp = c.post(
+        "/api/projects/demo/ideas/01-x/refine",
+        json={
+            "field": "title",
+            "prompt": "make it punchy",
+            "current_title": "Custom Title",
+            "current_description": "Custom Description",
+            "current_tags": "tag1, tag2",
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.get_json() == {"field": "title", "result": "Refined Result"}
+    assert recorded_kwargs["field"] == "title"
+    assert recorded_kwargs["user_prompt"] == "make it punchy"
+    assert recorded_kwargs["current_title"] == "Custom Title"
+    assert recorded_kwargs["current_description"] == "Custom Description"
+    assert recorded_kwargs["current_tags"] == "tag1, tag2"
+    assert recorded_kwargs["narration"] == "the script"
+    assert recorded_kwargs["hook"] == "h"
+    assert recorded_kwargs["video_title"] == "Source Video"
+    assert recorded_kwargs["model"] == "gpt-4.1"
+
+    # Also verify fallback to file defaults when current values are omitted
+    recorded_kwargs.clear()
+    resp2 = c.post(
+        "/api/projects/demo/ideas/01-x/refine",
+        json={"field": "description"},
+    )
+    assert resp2.status_code == 200
+    assert recorded_kwargs["field"] == "description"
+    assert recorded_kwargs["user_prompt"] == ""
+    assert recorded_kwargs["current_title"] == "Demo Idea"
+    assert recorded_kwargs["current_description"] == "old caption"
+    assert recorded_kwargs["current_tags"] == "old, tags"
+
+
+def test_post_refine_invalid_field(client):
+    c, _, _ = client
+    # Missing field
+    resp_empty = c.post("/api/projects/demo/ideas/01-x/refine", json={})
+    assert resp_empty.status_code == 422
+    assert "field must be one of: title, description, tags" in resp_empty.get_json()["error"]
+
+    # Invalid field
+    resp_invalid = c.post("/api/projects/demo/ideas/01-x/refine", json={"field": "hook"})
+    assert resp_invalid.status_code == 422
+    assert "field must be one of: title, description, tags" in resp_invalid.get_json()["error"]
+
+
+def test_post_refine_not_found(client):
+    c, _, _ = client
+    # Nonexistent project
+    resp_proj = c.post("/api/projects/nonexistent/ideas/01-x/refine", json={"field": "title"})
+    assert resp_proj.status_code == 404
+    assert "no such project: nonexistent" in resp_proj.get_json()["error"]
+
+    # Nonexistent idea slug
+    resp_idea = c.post("/api/projects/demo/ideas/nonexistent-idea/refine", json={"field": "title"})
+    assert resp_idea.status_code == 404
+    assert "no such idea: nonexistent-idea" in resp_idea.get_json()["error"]
+
+
+def test_post_refine_openai_error(client, monkeypatch):
+    c, cfg, _ = client
+    import dataclasses
+    import shorts.web.app as web_app
+
+    # Missing API key (None and empty string)
+    app_none = web_app.create_app(dataclasses.replace(cfg, openai_api_key=None))
+    resp_none = app_none.test_client().post("/api/projects/demo/ideas/01-x/refine", json={"field": "title"})
+    assert resp_none.status_code == 500
+    assert "OPENAI_API_KEY is not configured" in resp_none.get_json()["error"]
+
+    app_empty = web_app.create_app(dataclasses.replace(cfg, openai_api_key=""))
+    resp_empty = app_empty.test_client().post("/api/projects/demo/ideas/01-x/refine", json={"field": "title"})
+    assert resp_empty.status_code == 500
+    assert "OPENAI_API_KEY is not configured" in resp_empty.get_json()["error"]
+
+    # OpenAI / execution exception
+    def mock_raise(*args, **kwargs):
+        raise RuntimeError("OpenAI rate limit reached")
+
+    monkeypatch.setattr(web_app, "refine_idea_text", mock_raise)
+    resp_err = c.post("/api/projects/demo/ideas/01-x/refine", json={"field": "title"})
+    assert resp_err.status_code == 500
+    assert "OpenAI rate limit reached" in resp_err.get_json()["error"]
+
