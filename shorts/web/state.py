@@ -230,6 +230,7 @@ def build_snapshot(project: Project, config: Config) -> dict:
             "title": manifest.source.get("title", ""),
             "video_id": manifest.source.get("video_id", ""),
         },
+        "settings": manifest.settings,
         "stages": stage_rows(project, manifest, config),
         "prompt": prompt_text(project),
         "ideas": ideas,

@@ -10,9 +10,13 @@ from shorts.web.jobs import (
 
 def test_stage_argv_variants():
     assert stage_argv("ideate", "demo") == ["ideate", "demo"]
+    assert stage_argv("ideate", "demo", count=4) == ["ideate", "demo", "--count", "4"]
     assert stage_argv("voice", "demo", force=True) == ["voice", "demo", "--force"]
     assert stage_argv("fetch", "demo", url="http://x") == [
         "fetch", "http://x", "--name", "demo",
+    ]
+    assert stage_argv("fetch", "demo", url="http://x", count=5) == [
+        "fetch", "http://x", "--name", "demo", "--count", "5",
     ]
     with pytest.raises(ValueError):
         stage_argv("fetch", "demo")           # no url

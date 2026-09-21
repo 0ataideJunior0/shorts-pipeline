@@ -196,3 +196,44 @@ def test_init_and_stage_rows_integration(runner, fake_config):
     assert by["fetch"]["status"] == "skipped"
     assert by["transcribe"]["status"] == "skipped"
     assert by["ideate"]["status"] == "ready"
+
+
+def test_init_with_count(runner, fake_config):
+    r = runner.invoke(cli.cli, ["init", "count-proj", "--text", "content", "--count", "5"])
+    assert r.exit_code == 0
+    project_dir = fake_config.projects_dir / "count-proj"
+    manifest = Manifest.load(project_dir / "manifest.json")
+    assert manifest.settings.get("count") == 5
+    assert manifest.get_setting("count") == 5
+
+
+def test_init_with_count_zero(runner, fake_config):
+    r = runner.invoke(cli.cli, ["init", "zero-count-proj", "--text", "content", "--count", "0"])
+    assert r.exit_code != 0
+
+
+def test_init_without_count(runner, fake_config):
+    r = runner.invoke(cli.cli, ["init", "no-count-proj", "--text", "content"])
+    assert r.exit_code == 0
+    project_dir = fake_config.projects_dir / "no-count-proj"
+    manifest = Manifest.load(project_dir / "manifest.json")
+    assert "count" not in manifest.settings
+    assert manifest.get_setting("count") is None
+
+
+def test_fetch_with_count(runner, fake_config, monkeypatch):
+    import shorts.stages.fetch as fetch_stage
+    monkeypatch.setattr(fetch_stage, "probe_title", lambda url: "fetched-title")
+    monkeypatch.setattr(fetch_stage, "run", lambda project, config, url, force: None)
+
+    r = runner.invoke(cli.cli, ["fetch", "https://youtube.com/watch?v=abc", "--name", "fetch-proj", "--count", "5"])
+    assert r.exit_code == 0
+    project_dir = fake_config.projects_dir / "fetch-proj"
+    manifest = Manifest.load(project_dir / "manifest.json")
+    assert manifest.get_setting("count") == 5
+
+
+def test_fetch_with_count_zero(runner, fake_config):
+    r = runner.invoke(cli.cli, ["fetch", "https://youtube.com/watch?v=abc", "--name", "fetch-proj", "--count", "0"])
+    assert r.exit_code != 0
+

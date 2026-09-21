@@ -133,6 +133,8 @@ def test_build_snapshot_shape(tmp_path):
     assert [s["stage"] for s in snap["stages"]] == [
         "fetch", "transcribe", "ideate", "voice", "plan", "render",
     ]
+    assert "settings" in snap
+    assert snap["settings"] == {}
     assert snap["ideas"][0]["slug"] == "01-x"
     assert snap["ideas"][0]["approved"] is True
     assert snap["ideas"][0]["narration"] == "script one"

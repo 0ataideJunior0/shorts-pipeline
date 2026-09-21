@@ -36,6 +36,18 @@ def _json_error(status: int, message: str):
     return jsonify({"error": message}), status
 
 
+def _validate_count(count_raw: object) -> int:
+    if isinstance(count_raw, bool) or not isinstance(count_raw, (int, str)):
+        raise ValueError("count must be an integer >= 1")
+    try:
+        count_val = int(count_raw)
+    except ValueError:
+        raise ValueError("count must be an integer >= 1")
+    if count_val < 1:
+        raise ValueError("count must be an integer >= 1")
+    return count_val
+
+
 def _load_project(config: Config, name: str) -> Project:
     return Project.load(config.projects_dir, name)
 
@@ -83,6 +95,7 @@ def create_app(config: Config) -> Flask:
                 m = Manifest.load(project.manifest_path)
                 if m.source:
                     snap["source"] = {**snap.get("source", {}), **m.source}
+                snap["settings"] = m.settings
             except Exception:
                 pass
         return jsonify(snap)
@@ -254,6 +267,15 @@ def create_app(config: Config) -> Flask:
         force_val = body.get("force") if "force" in body else request.form.get("force")
         force = bool(force_val) if not isinstance(force_val, str) else force_val.lower() in ("true", "1")
 
+        count_raw = body.get("count") if "count" in body else request.form.get("count")
+        if count_raw is not None and str(count_raw).strip() != "":
+            try:
+                count = _validate_count(count_raw)
+            except (ValueError, TypeError):
+                return _json_error(422, "count must be an integer >= 1")
+        else:
+            count = None
+
         url = str(body.get("url") or request.form.get("url") or "").strip()
         text = str(body.get("text") or request.form.get("text") or "").strip()
         uploaded_file = request.files.get("file")
@@ -276,7 +298,7 @@ def create_app(config: Config) -> Flask:
 
         if has_url:
             cmd = [sys.executable, "-m", "shorts",
-                   *stage_argv("fetch", slug, url=url, force=force)]
+                   *stage_argv("fetch", slug, url=url, force=force, count=count)]
             try:
                 _runner().start("fetch", slug, cmd)
             except JobBusy as exc:
@@ -322,6 +344,8 @@ def create_app(config: Config) -> Flask:
         manifest.source = source_dict
         manifest.stage_skipped("fetch")
         manifest.stage_skipped("transcribe")
+        if count is not None:
+            manifest.set_setting("count", count)
         manifest.save(project.manifest_path)
 
         snap = _snapshot(project)
@@ -338,8 +362,16 @@ def create_app(config: Config) -> Flask:
         except FileNotFoundError:
             return _json_error(404, f"no such project: {name}")
         body = request.get_json(silent=True) or {}
+        count = None
+        if stage == "ideate":
+            count_raw = body.get("count")
+            if count_raw is not None:
+                try:
+                    count = _validate_count(count_raw)
+                except (ValueError, TypeError):
+                    return _json_error(422, "count must be an integer >= 1")
         cmd = [sys.executable, "-m", "shorts",
-               *stage_argv(stage, name, force=bool(body.get("force")))]
+               *stage_argv(stage, name, force=bool(body.get("force")), count=count)]
         try:
             _runner().start(stage, name, cmd)
         except JobBusy as exc:

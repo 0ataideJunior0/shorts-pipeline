@@ -8,7 +8,13 @@ from shorts.project import Manifest, Project, sha256_file, sha256_text
 from shorts.prompt import PromptError, ensure_prompt_file, read_prompt
 
 
-def run(project: Project, config: Config, *, force: bool = False) -> None:
+def run(
+    project: Project,
+    config: Config,
+    *,
+    force: bool = False,
+    count: int | None = None,
+) -> None:
     if not project.transcript_txt_path.exists():
         raise SystemExit(
             f"no transcript - run: python -m shorts transcribe {project.name}"
@@ -38,6 +44,20 @@ def run(project: Project, config: Config, *, force: bool = False) -> None:
             )
         return
 
+    if count is not None and count > 0:
+        effective_count = count
+    else:
+        manifest_count = manifest.get_setting("count")
+        if (
+            manifest_count is not None
+            and isinstance(manifest_count, int)
+            and not isinstance(manifest_count, bool)
+            and manifest_count > 0
+        ):
+            effective_count = manifest_count
+        else:
+            effective_count = config.ideate.count
+
     transcript = project.transcript_txt_path.read_text()
     title = manifest.source.get("title", project.name)
     client = get_client(config.openai_api_key)
@@ -47,7 +67,7 @@ def run(project: Project, config: Config, *, force: bool = False) -> None:
         video_title=title,
         prompt=prompt_text,
         model=config.ideate.model,
-        count=config.ideate.count,
+        count=effective_count,
     )
 
     project.ideas_dir.mkdir(parents=True, exist_ok=True)
@@ -72,6 +92,7 @@ def run(project: Project, config: Config, *, force: bool = False) -> None:
         model=config.ideate.model,
         transcript_sha256=sha256_file(project.transcript_txt_path),
         prompt_sha256=prompt_hash,
+        count=effective_count,
     )
     manifest.save(project.manifest_path)
     print(f"ideate: wrote {written} idea file(s) -> {project.ideas_dir}")

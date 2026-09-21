@@ -78,6 +78,8 @@ def test_get_project_snapshot(client):
     assert snap["ideas"][0]["slug"] == "01-x"
     assert snap["ideas"][0]["approved"] is True
     assert snap["job"] is None
+    assert "settings" in snap
+    assert snap["settings"] == {}
 
 
 def test_get_unknown_project_404(client):
@@ -287,6 +289,23 @@ def test_post_run_stage_builds_argv(fake_client):
     assert cmd[1:3] == ["-m", "shorts"]
 
 
+def test_post_run_stage_ideate_with_count(fake_client):
+    c, fake = fake_client
+    resp = c.post("/api/projects/demo/run/ideate", json={"count": 7})
+    assert resp.status_code == 202
+    stage, project, cmd = fake.started[0]
+    assert stage == "ideate" and project == "demo"
+    assert cmd[-4:] == ["ideate", "demo", "--count", "7"]
+
+
+@pytest.mark.parametrize("bad_count", ["bad", 0, -1])
+def test_post_run_stage_ideate_invalid_count_returns_422(client, bad_count):
+    c, _, _ = client
+    resp = c.post("/api/projects/demo/run/ideate", json={"count": bad_count})
+    assert resp.status_code == 422
+    assert "count must be an integer >= 1" in resp.get_json()["error"]
+
+
 def test_post_run_bad_stage_400(fake_client):
     c, _ = fake_client
     assert c.post("/api/projects/demo/run/fetch").status_code == 400
@@ -314,6 +333,15 @@ def test_post_projects_starts_fetch(fake_client):
     assert cmd[-4:] == ["fetch", "http://x", "--name", "new-clip"]
 
 
+def test_post_projects_starts_fetch_with_count(fake_client):
+    c, fake = fake_client
+    resp = c.post("/api/projects", json={"url": "http://x", "name": "Count Clip", "count": 6})
+    assert resp.status_code == 202
+    stage, project, cmd = fake.started[0]
+    assert stage == "fetch" and project == "count-clip"
+    assert cmd[-6:] == ["fetch", "http://x", "--name", "count-clip", "--count", "6"]
+
+
 def test_post_projects_text_payload(client):
     c, cfg, _ = client
     resp = c.post(
@@ -333,6 +361,20 @@ def test_post_projects_text_payload(client):
     project_dir = cfg.projects_dir / "text-project"
     transcript_file = project_dir / "transcript" / "transcript.txt"
     assert transcript_file.read_text(encoding="utf-8") == "Some instruction text"
+
+
+def test_post_projects_text_payload_with_count(client):
+    c, cfg, _ = client
+    resp = c.post(
+        "/api/projects",
+        json={"name": "Text Project Count", "text": "Some instruction text", "count": 8},
+    )
+    assert resp.status_code == 201
+    data = resp.get_json()
+    assert data["settings"] == {"count": 8}
+    m = Manifest.load(cfg.projects_dir / "text-project-count" / "manifest.json")
+    assert m.settings == {"count": 8}
+    assert m.get_setting("count") == 8
 
 
 def test_post_projects_file_upload(client):
@@ -359,6 +401,33 @@ def test_post_projects_file_upload(client):
     project_dir = cfg.projects_dir / "file-project"
     transcript_file = project_dir / "transcript" / "transcript.txt"
     assert transcript_file.read_text(encoding="utf-8") == "hello markdown"
+
+
+def test_post_projects_file_upload_with_count(client):
+    c, cfg, _ = client
+    resp = c.post(
+        "/api/projects",
+        data={
+            "name": "File Project Count",
+            "file": (io.BytesIO(b"hello markdown"), "notes.md"),
+            "count": 5,
+        },
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 201
+    data = resp.get_json()
+    assert data["settings"] == {"count": 5}
+    m = Manifest.load(cfg.projects_dir / "file-project-count" / "manifest.json")
+    assert m.settings == {"count": 5}
+    assert m.get_setting("count") == 5
+
+
+@pytest.mark.parametrize("bad_count", ["bad", 0, -1])
+def test_post_projects_invalid_count_returns_422(client, bad_count):
+    c, _, _ = client
+    resp = c.post("/api/projects", json={"name": "Bad Count", "text": "abc", "count": bad_count})
+    assert resp.status_code == 422
+    assert "count must be an integer >= 1" in resp.get_json()["error"]
 
 
 def test_post_projects_file_unsupported_extension(client):

@@ -635,6 +635,7 @@ async function loadList() {
         <button type="button" class="tab" data-tab="file">File upload</button>
       </div>
       <label>Project name<input name="name" required></label>
+      <label>Target shorts count <span class="muted">(optional)</span><input type="number" name="count" min="1" step="1" placeholder="e.g. 6"></label>
       <div class="newproj-pane" data-pane="youtube">
         <label>YouTube URL<input name="url"></label>
       </div>
@@ -669,18 +670,24 @@ async function loadList() {
       alert("Project name is required");
       return;
     }
+    const countVal = form.count ? form.count.value.trim() : "";
+    const count = countVal ? parseInt(countVal, 10) : undefined;
+    if (countVal && (isNaN(count) || count < 1)) {
+      alert("Target shorts count must be a positive integer");
+      return;
+    }
     const slug = slugify(name);
     try {
       if (activeTab === "youtube") {
         const url = form.url.value.trim();
         if (!url) throw new Error("YouTube URL is required");
-        await api("POST", "/api/projects", { name, url });
+        await api("POST", "/api/projects", { name, url, ...(count ? { count } : {}) });
         creating.add(slug);
         location.hash = "#/" + encodeURIComponent(slug);
       } else if (activeTab === "text") {
         const text = form.text.value.trim();
         if (!text) throw new Error("Text instruction is required");
-        await api("POST", "/api/projects", { name, text });
+        await api("POST", "/api/projects", { name, text, ...(count ? { count } : {}) });
         location.hash = "#/" + encodeURIComponent(slug);
       } else if (activeTab === "file") {
         const fileInput = form.file;
@@ -688,6 +695,7 @@ async function loadList() {
         const fd = new FormData();
         fd.append("name", name);
         fd.append("file", fileInput.files[0]);
+        if (count) fd.append("count", count);
         await api("POST", "/api/projects", fd);
         location.hash = "#/" + encodeURIComponent(slug);
       }
@@ -813,11 +821,15 @@ function deck(s, armedRow, runningHere) {
     const detail = st.status === "done"
       ? (st.detail || "Up to date. Run with force to rebuild it.")
       : (st.detail || "");
+    const countInput = st.stage === "ideate"
+      ? `<label style="display:inline-flex; align-items:center; gap:.3rem; font-size:12px; color:var(--ink-dim);">count <input type="number" id="armcount" min="1" step="1" style="width:3.5rem; padding:2px 4px; font:12px var(--mono);" value="${escapeHtml(state.settings && state.settings.count != null ? state.settings.count : "")}" placeholder="def"></label>`
+      : "";
     return `<div class="deck armed" aria-live="polite">
       <span class="d-stage">${st.stage}</span>
       <span class="d-status">${st.status}</span>
       <span class="d-detail">${escapeHtml(detail)}</span>
       <span class="spacer"></span>
+      ${countInput}
       <label><input type="checkbox" id="armforce"> force</label>
       <button class="btn btn-run" id="armrun">Run ${st.stage}</button>
     </div>`;
@@ -870,14 +882,18 @@ function ideaCard(idea) {
 }
 
 /* ---------- run controls ---------- */
-async function runStage(stage, force) {
+async function runStage(stage, force, count) {
   if (pending || jobHereRunning()) return;
   pending = true;
   startedAt = Date.now();
   lastLine = "";
   render();
   try {
-    await api("POST", `/api/projects/${encodeURIComponent(state.name)}/run/${stage}`, { force });
+    const payload = { force };
+    if (stage === "ideate" && count != null && !isNaN(count)) {
+      payload.count = count;
+    }
+    await api("POST", `/api/projects/${encodeURIComponent(state.name)}/run/${stage}`, payload);
   } catch (err) {
     pending = false;
     render();
@@ -891,7 +907,12 @@ function wire() {
     b.onclick = () => { armed = b.dataset.stage; render(); };
   });
   const armrun = $("#armrun");
-  if (armrun) armrun.onclick = () => runStage(armed, $("#armforce").checked);
+  if (armrun) armrun.onclick = () => {
+    const force = $("#armforce") ? $("#armforce").checked : false;
+    const countInput = $("#armcount");
+    const countVal = countInput && countInput.value.trim() ? parseInt(countInput.value.trim(), 10) : undefined;
+    runStage(armed, force, countVal);
+  };
   const stop = $("#stop");
   if (stop) stop.onclick = () => {
     stop.disabled = true;

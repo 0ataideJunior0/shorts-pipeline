@@ -103,3 +103,38 @@ def test_stage_skipped(tmp_path):
     assert loaded.is_stage_skipped("transcribe") is True
     assert loaded.stages["fetch"]["status"] == "skipped"
     assert loaded.stages["transcribe"]["status"] == "skipped"
+
+
+def test_settings_default_empty():
+    m = Manifest.new("demo")
+    assert m.settings == {}
+    assert m.get_setting("nonexistent") is None
+    assert m.get_setting("nonexistent", default=6) == 6
+
+
+def test_settings_get_set():
+    m = Manifest.new("demo")
+    m.set_setting("count", 4)
+    assert m.get_setting("count") == 4
+    assert m.settings == {"count": 4}
+    assert m.get_setting("nonexistent", default=6) == 6
+
+
+def test_settings_save_load_roundtrip(tmp_path):
+    m = Manifest.new("demo")
+    m.set_setting("count", 4)
+    path = tmp_path / "manifest.json"
+    m.save(path)
+
+    loaded = Manifest.load(path)
+    assert loaded.settings == {"count": 4}
+    assert loaded.get_setting("count") == 4
+
+
+def test_settings_absent_loads_empty(tmp_path):
+    path = tmp_path / "manifest.json"
+    path.write_text('{"name": "demo"}')
+    loaded = Manifest.load(path)
+    assert loaded.settings == {}
+    assert loaded.get_setting("count", default=6) == 6
+
