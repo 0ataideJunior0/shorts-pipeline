@@ -379,6 +379,41 @@ def test_put_cadence_weekdays_bool_is_422(client):
     assert r.status_code == 422
 
 
+def test_put_cadence_with_daily_times(client):
+    c, _, project = client
+    r = c.put(
+        "/api/projects/demo/publish/cadence",
+        json={
+            "start": "2026-09-20T10:00:00Z",
+            "times": ["10:00", "14:00", "19:00"],
+            "weekdays": [1, 2, 3],
+        },
+    )
+    assert r.status_code == 200
+    from shorts.project import Manifest
+    assert Manifest.load(project.manifest_path).get_publish()["times"] == ["10:00", "14:00", "19:00"]
+    body = r.get_json()
+    assert body["cadence"]["times"] == ["10:00", "14:00", "19:00"]
+    assert body["cadence"]["weekdays"] == [1, 2, 3]
+
+    r2 = c.put(
+        "/api/projects/demo/publish/cadence",
+        json={"start": "2026-09-20T10:00:00Z", "interval_hours": 12},
+    )
+    assert r2.status_code == 200
+    assert "times" not in Manifest.load(project.manifest_path).get_publish()
+    assert "times" not in (r2.get_json()["cadence"] or {})
+
+
+def test_put_cadence_invalid_times(client):
+    c, _, _ = client
+    start = "2026-09-20T10:00:00Z"
+    for bad in ["10:00", 123, ["99:99"], ["invalid"], [123], ["10:00", "bad"]]:
+        r = c.put("/api/projects/demo/publish/cadence", json={"start": start, "times": bad})
+        assert r.status_code == 422
+        assert r.get_json()["error"] == "times must be a list of HH:MM strings"
+
+
 def test_put_publish_at(client):
     c, _, project = client
     r = c.put("/api/projects/demo/ideas/01-x/publish-at", json={"publish_at": "2026-10-01T12:00:00Z"})

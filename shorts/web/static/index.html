@@ -248,6 +248,11 @@
   .cadence { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; margin:.2rem 0 .9rem; }
   .cadence input[type=number] { width:4rem; }
   .cadence .wd { display:inline-flex; gap:.3rem; font:11px var(--mono); color:var(--ink-dim); }
+  .cadence .times-list { display:inline-flex; align-items:center; gap:.3rem; flex-wrap:wrap; }
+  .cadence .time-chip { display:inline-flex; align-items:center; gap:.2rem; background:var(--panel-2); padding:2px 6px; border-radius:4px; border:1px solid var(--line); }
+  .cadence .time-chip input[type=time] { font:12px var(--mono); padding:1px 3px; border:none; background:transparent; color:var(--ink); }
+  .cadence .time-chip .del-time { background:transparent; border:none; cursor:pointer; color:var(--ink-dim); font-size:14px; line-height:1; padding:0 2px; }
+  .cadence .time-chip .del-time:hover { color:var(--fail); }
   .prow { display:flex; align-items:center; gap:.7rem; flex-wrap:wrap; padding:.5rem 0; border-bottom:1px solid var(--line); }
   .prow .pt { flex:1 1 12rem; font-weight:600; font-size:13px; }
   .prow .chip { font:11px var(--mono); padding:.1rem .5rem; border:1px solid var(--line); border-radius:999px; color:var(--ink-dim); }
@@ -696,9 +701,12 @@ async function loadPublish() {
     ? `<span class="ok">connected${status.channel ? " · " + escapeHtml(status.channel) : ""}</span>`
     : `<span class="bad">${status.error === "token expired" ? "token expired" : status.error === "not configured" ? "not configured" : "not connected"}</span>`;
   const cad = queue.cadence || {};
+  const times = cad.times && cad.times.length ? cad.times : ["10:00"];
   const wd = new Set(cad.weekdays || []);
   const dayBoxes = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d, i) =>
     `<label><input type="checkbox" class="wd-cb" value="${i + 1}" ${wd.has(i + 1) ? "checked" : ""}>${d}</label>`).join("");
+  const timeChips = times.map((t) =>
+    `<span class="time-chip"><input type="time" class="cad-time-val" value="${escapeHtml(t)}"><button type="button" class="del-time" title="Remove">&times;</button></span>`).join("");
 
   box.innerHTML = `
     <div class="pub-conn">${conn}
@@ -706,9 +714,11 @@ async function loadPublish() {
     <div class="cadence">
       <span class="muted">start</span>
       <input type="datetime-local" id="cad-start" value="${toLocalInput(cad.start)}">
-      <span class="muted">every</span>
-      <input type="number" id="cad-int" min="1" value="${cad.interval_hours || 24}">
-      <span class="muted">hours</span>
+      <span class="muted">times</span>
+      <span class="times-list" id="cad-times">
+        ${timeChips}
+        <button type="button" class="btn" id="cad-add-time">+ Add time</button>
+      </span>
       <span class="wd">${dayBoxes}</span>
       <button class="btn" id="cad-save">Save schedule</button>
     </div>
@@ -719,12 +729,37 @@ async function loadPublish() {
     api("POST", "/api/youtube/auth").catch((e) => toast(e.message, "err"));
     ytStatusCache = null;
   };
+  const addTimeBtn = $("#cad-add-time");
+  if (addTimeBtn) {
+    addTimeBtn.onclick = () => {
+      const chip = document.createElement("span");
+      chip.className = "time-chip";
+      chip.innerHTML = `<input type="time" class="cad-time-val" value="10:00"><button type="button" class="del-time" title="Remove">&times;</button>`;
+      addTimeBtn.before(chip);
+      chip.querySelector(".del-time").onclick = () => chip.remove();
+    };
+  }
+  document.querySelectorAll(".del-time").forEach((btn) => {
+    btn.onclick = () => btn.closest(".time-chip")?.remove();
+  });
+  const timesList = $("#cad-times");
+  if (timesList) {
+    timesList.onclick = (e) => {
+      const btn = e.target.closest(".del-time");
+      if (btn) btn.closest(".time-chip")?.remove();
+    };
+  }
   $("#cad-save").onclick = async () => {
     const start = fromLocalInput($("#cad-start").value);
     const weekdays = [...document.querySelectorAll(".wd-cb:checked")].map((c) => +c.value);
+    const times = [...document.querySelectorAll(".cad-time-val")].map((i) => i.value.trim()).filter(Boolean);
+    if (!times.length) {
+      toast("At least one time slot is required", "err");
+      return;
+    }
     try {
       await api("PUT", `/api/projects/${encodeURIComponent(state.name)}/publish/cadence`,
-        { start, interval_hours: +$("#cad-int").value, weekdays: weekdays.length ? weekdays : null });
+        { start, times, weekdays: weekdays.length ? weekdays : null });
       toast("Schedule saved");
       loadPublish();
     } catch (err) { toast(err.message, "err"); }

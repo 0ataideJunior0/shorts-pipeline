@@ -23,6 +23,25 @@ def test_cadence_from_manifest():
                  "interval_hours": 24, "weekdays": None}
 
 
+def test_cadence_from_manifest_with_times():
+    pub = {
+        "start": "2026-09-10T09:00:00Z",
+        "interval_hours": 12,
+        "weekdays": [1, 2, 3],
+        "times": ["18:00", "9:00", "09:00", "25:00", "bad", "12:30"],
+    }
+    c = cadence_from_manifest(pub)
+    assert c is not None
+    assert c["start"] == datetime(2026, 9, 10, 9, 0, tzinfo=UTC)
+    assert c["interval_hours"] == 12
+    assert c["weekdays"] == [1, 2, 3]
+    assert c["times"] == ["09:00", "12:30", "18:00"]
+
+    pub_invalid = {"start": "2026-09-10T09:00:00Z", "times": ["99:99", "invalid"]}
+    c_inv = cadence_from_manifest(pub_invalid)
+    assert "times" not in c_inv
+
+
 def test_build_video_body_no_schedule():
     body = build_video_body(
         title="T" * 130, description="d", tags=" a, b ,, c ",
@@ -122,6 +141,56 @@ def test_resolve_schedule_not_before_none_is_unchanged():
     start = datetime(2020, 1, 1, 0, 0, tzinfo=UTC)
     cad = {"start": start, "interval_hours": 24, "weekdays": None}
     assert resolve_schedule(["a"], {}, cad, set(), not_before=None) == {"a": start}
+
+
+def test_resolve_schedule_with_daily_times_basic():
+    # AC1: schedules 3 items across eligible slots (Day 1 10:00, Day 1 18:00, Day 2 10:00)
+    # 2026-09-10 is Thursday (4), 2026-09-11 is Friday (5)
+    dt = datetime(2026, 9, 10, 9, 0, tzinfo=UTC)
+    cad = {"start": dt, "times": ["10:00", "18:00"], "weekdays": [1, 2, 3, 4, 5]}
+    out = resolve_schedule(["a", "b", "c"], {}, cad, set())
+    assert out["a"] == datetime(2026, 9, 10, 10, 0, tzinfo=UTC)
+    assert out["b"] == datetime(2026, 9, 10, 18, 0, tzinfo=UTC)
+    assert out["c"] == datetime(2026, 9, 11, 10, 0, tzinfo=UTC)
+
+
+def test_resolve_schedule_with_daily_times_not_before():
+    # AC2: not_before at 12:00 on Day 1 skips 10:00 slot, assigns 18:00 as first slot
+    dt = datetime(2026, 9, 10, 9, 0, tzinfo=UTC)
+    cad = {"start": dt, "times": ["10:00", "18:00"], "weekdays": [1, 2, 3, 4, 5]}
+    not_before = datetime(2026, 9, 10, 12, 0, tzinfo=UTC)
+    out = resolve_schedule(["a", "b"], {}, cad, set(), not_before=not_before)
+    assert out["a"] == datetime(2026, 9, 10, 18, 0, tzinfo=UTC)
+    assert out["b"] == datetime(2026, 9, 11, 10, 0, tzinfo=UTC)
+
+
+def test_resolve_schedule_with_daily_times_weekdays():
+    # 2026-09-11 is Friday (5). 2026-09-12 (Sat) and 2026-09-13 (Sun) should be skipped.
+    start = datetime(2026, 9, 11, 9, 0, tzinfo=UTC)
+    cad = {"start": start, "times": ["10:00", "18:00"], "weekdays": [1, 2, 3, 4, 5]}
+    out = resolve_schedule(["a", "b", "c"], {}, cad, set())
+    assert out["a"] == datetime(2026, 9, 11, 10, 0, tzinfo=UTC)
+    assert out["b"] == datetime(2026, 9, 11, 18, 0, tzinfo=UTC)
+    assert out["c"] == datetime(2026, 9, 14, 10, 0, tzinfo=UTC)
+
+
+def test_resolve_schedule_with_daily_times_taken_and_overrides():
+    start = datetime(2026, 9, 10, 9, 0, tzinfo=UTC)
+    cad = {"start": start, "times": ["10:00", "18:00"], "weekdays": None}
+    taken_slot = datetime(2026, 9, 10, 10, 0, tzinfo=UTC)
+    override_slot = datetime(2026, 9, 10, 18, 0, tzinfo=UTC)
+
+    out = resolve_schedule(
+        ["a", "b", "c"],
+        {"b": override_slot},
+        cad,
+        taken={taken_slot},
+    )
+    assert out["b"] == override_slot
+    # "a" skips taken (10:00) and override (18:00), taking next day 10:00
+    assert out["a"] == datetime(2026, 9, 11, 10, 0, tzinfo=UTC)
+    # "c" takes next day 18:00
+    assert out["c"] == datetime(2026, 9, 11, 18, 0, tzinfo=UTC)
 
 
 from shorts.project import Manifest, Project
@@ -281,13 +350,18 @@ def test_run_slug_upload_matches_web_queue_preview(tmp_path, monkeypatch):
     _fresh_rendered_idea(project, "01-x", "First")
     _fresh_rendered_idea(project, "02-y", "Second")
 
+    start_dt = datetime.now(UTC).replace(hour=9, minute=0, second=0, microsecond=0) + timedelta(
+        days=365
+    )
+    start = iso(start_dt)
     m = Manifest.load(project.manifest_path)
-    m.set_publish(start="2026-09-20T09:00:00Z", interval_hours=24, weekdays=None)
+    m.set_publish(start=start, interval_hours=24, weekdays=None)
     m.save(project.manifest_path)
 
     from shorts.web.state import publish_queue
     preview = {it["slug"]: it["publish_at"] for it in publish_queue(project, cfg)["items"]}
-    assert preview["02-y"] == "2026-09-21T09:00:00Z"
+    expected_slot1 = iso(start_dt + timedelta(days=1))
+    assert preview["02-y"] == expected_slot1
 
     import shorts.publish as pub
     monkeypatch.setattr(pub, "get_credentials", lambda c: object())
@@ -301,7 +375,7 @@ def test_run_slug_upload_matches_web_queue_preview(tmp_path, monkeypatch):
     pub.run(project, cfg, slugs=["02-y"])
 
     assert [s[0] for s in seen] == ["02-y.mp4"]
-    assert seen[0][1] == "2026-09-21T09:00:00Z"
+    assert seen[0][1] == expected_slot1
     back = Manifest.load(project.manifest_path)
     assert back.get_idea("02-y")["youtube"]["publish_at"] == preview["02-y"]
 

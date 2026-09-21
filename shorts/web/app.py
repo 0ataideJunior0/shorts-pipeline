@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import queue
+import re
 import sys
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from shorts.web.jobs import (
 from shorts.web.state import build_snapshot, category_report, list_projects, publish_queue
 
 _STATIC = Path(__file__).parent / "static"
+_TIME_RE = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
 
 
 def _atomic_write(path: Path, text: str) -> None:
@@ -294,7 +296,29 @@ def create_app(config: Config) -> Flask:
                 ):
                     return _json_error(422, "weekdays must be integers 1..7")
                 weekdays = list(weekdays) or None
-            manifest.set_publish(start=str(start), interval_hours=interval, weekdays=weekdays)
+            times = body.get("times")
+            cleaned_times = None
+            if times is not None:
+                if not isinstance(times, list):
+                    return _json_error(422, "times must be a list of HH:MM strings")
+                cleaned_times_set = set()
+                for t in times:
+                    if not isinstance(t, str):
+                        return _json_error(422, "times must be a list of HH:MM strings")
+                    m = _TIME_RE.match(t.strip())
+                    if not m:
+                        return _json_error(422, "times must be a list of HH:MM strings")
+                    cleaned_times_set.add(f"{int(m.group(1)):02d}:{int(m.group(2)):02d}")
+                cleaned_times = sorted(cleaned_times_set)
+
+            pub = {
+                "start": str(start),
+                "interval_hours": interval,
+                "weekdays": weekdays,
+            }
+            if times is not None:
+                pub["times"] = cleaned_times
+            manifest.publish = pub
         manifest.save(project.manifest_path)
         return jsonify(publish_queue(project, config))
 
