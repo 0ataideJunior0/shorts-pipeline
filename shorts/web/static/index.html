@@ -723,7 +723,7 @@ async function loadPublishBlock(platform) {
     return null;
   }
 
-  // no credentials in config.toml at all: nothing here can work yet, so don't
+  // no credentials configured at all: nothing here can work yet, so don't
   // offer buttons that are guaranteed to fail
   const unconfigured = !status.connected && status.error === "not configured";
   const conn = status.connected
@@ -738,7 +738,9 @@ async function loadPublishBlock(platform) {
         status.connected ? "Reconnect" : "Connect " + label}</button>
     </div>
     ${unconfigured
-      ? `<p class="pub-note">Add <code>[${platform}]</code> credentials to config.toml, then connect.</p>`
+      ? (platform === "tiktok"
+        ? `<p class="pub-note">Set <code>TIKTOK_CLIENT_KEY</code> and <code>TIKTOK_CLIENT_SECRET</code> in .env, then connect.</p>`
+        : `<p class="pub-note">Add <code>[${platform}]</code> credentials to config.toml, then connect.</p>`)
       : ""}
     ${queue.items.map((it) => pubRow(it, platform, unconfigured)).join("")
       || `<p class="muted">No approved ideas.</p>`}
