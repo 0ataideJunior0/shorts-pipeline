@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 
 from shorts.ideas import sync_idea_state
@@ -22,11 +23,22 @@ def iso(dt: datetime) -> str:
 def cadence_from_manifest(pub: dict) -> dict | None:
     if not pub or not pub.get("start"):
         return None
-    return {
+    res = {
         "start": parse_iso(pub["start"]),
         "interval_hours": int(pub.get("interval_hours", 24)),
         "weekdays": pub.get("weekdays"),
     }
+    raw_times = pub.get("times")
+    if isinstance(raw_times, list):
+        valid_times = set()
+        for t in raw_times:
+            if isinstance(t, str):
+                m = re.match(r"^([01]?\d|2[0-3]):([0-5]\d)$", t.strip())
+                if m:
+                    valid_times.add(f"{int(m.group(1)):02d}:{int(m.group(2)):02d}")
+        if valid_times:
+            res["times"] = sorted(valid_times)
+    return res
 
 
 def resolve_schedule(
@@ -38,10 +50,71 @@ def resolve_schedule(
 ) -> dict[str, datetime | None]:
     used = set(taken)
     out: dict[str, datetime | None] = {}
-    k = 0
     start = cadence["start"] if cadence else None
-    interval = timedelta(hours=cadence["interval_hours"]) if cadence else None
     weekdays = cadence["weekdays"] if cadence else None
+    times = cadence.get("times") if cadence else None
+
+    if times:
+        used.update(overrides.values())
+        for slug in slugs:
+            if slug in overrides:
+                out[slug] = overrides[slug]
+            else:
+                out[slug] = None
+
+        if start is None:
+            return out
+
+        pending = [s for s in slugs if s not in overrides]
+        if not pending:
+            return out
+
+        tz = start.tzinfo
+        nb = not_before
+        if nb is not None:
+            if tz is not None and nb.tzinfo is None:
+                nb = nb.replace(tzinfo=tz)
+            elif tz is None and nb.tzinfo is not None:
+                tz = nb.tzinfo
+            nb_in_tz = nb.astimezone(tz) if tz else nb
+            start_date = nb_in_tz.date() if nb_in_tz.date() > start.date() else start.date()
+        else:
+            start_date = start.date()
+
+        parsed_times = []
+        for t_str in set(times):
+            h, m = map(int, t_str.split(":"))
+            parsed_times.append((h, m))
+        parsed_times.sort()
+
+        pending_idx = 0
+        num_pending = len(pending)
+
+        for day_idx in range(_K_CAP):
+            if pending_idx >= num_pending:
+                break
+            day = start_date + timedelta(days=day_idx)
+            if weekdays is not None and day.isoweekday() not in weekdays:
+                continue
+            for hour, minute in parsed_times:
+                slot = datetime(day.year, day.month, day.day, hour, minute, tzinfo=tz)
+                if slot < start:
+                    continue
+                if nb is not None and slot <= nb:
+                    continue
+                if slot in used:
+                    continue
+                slug = pending[pending_idx]
+                out[slug] = slot
+                used.add(slot)
+                pending_idx += 1
+                if pending_idx >= num_pending:
+                    break
+
+        return out
+
+    k = 0
+    interval = timedelta(hours=cadence["interval_hours"]) if cadence else None
     if start is not None and not_before is not None:
         delta = (not_before - start) / interval  # timedelta / timedelta -> float
         if delta >= 0:

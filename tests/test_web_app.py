@@ -1,3 +1,4 @@
+import io
 import json
 from pathlib import Path
 
@@ -83,6 +84,8 @@ def test_get_project_snapshot(client):
     assert snap["ideas"][0]["slug"] == "01-x"
     assert snap["ideas"][0]["approved"] is True
     assert snap["job"] is None
+    assert "settings" in snap
+    assert snap["settings"] == {}
 
 
 def test_get_unknown_project_404(client):
@@ -118,6 +121,10 @@ def test_index_served(client):
     resp = c.get("/")
     assert resp.status_code == 200
     assert b"EventSource" in resp.data
+    assert b'<dialog id="refine-modal">' in resp.data
+    assert b"refine-btn" in resp.data
+    assert b"refine-prompt-input" in resp.data
+    assert b"/refine" in resp.data
 
 
 def test_put_prompt_writes_file(client):
@@ -288,6 +295,23 @@ def test_post_run_stage_builds_argv(fake_client):
     assert cmd[1:3] == ["-m", "shorts"]
 
 
+def test_post_run_stage_ideate_with_count(fake_client):
+    c, fake = fake_client
+    resp = c.post("/api/projects/demo/run/ideate", json={"count": 7})
+    assert resp.status_code == 202
+    stage, project, cmd = fake.started[0]
+    assert stage == "ideate" and project == "demo"
+    assert cmd[-4:] == ["ideate", "demo", "--count", "7"]
+
+
+@pytest.mark.parametrize("bad_count", ["bad", 0, -1])
+def test_post_run_stage_ideate_invalid_count_returns_422(client, bad_count):
+    c, _, _ = client
+    resp = c.post("/api/projects/demo/run/ideate", json={"count": bad_count})
+    assert resp.status_code == 422
+    assert "count must be an integer >= 1" in resp.get_json()["error"]
+
+
 def test_post_run_bad_stage_400(fake_client):
     c, _ = fake_client
     assert c.post("/api/projects/demo/run/fetch").status_code == 400
@@ -313,6 +337,173 @@ def test_post_projects_starts_fetch(fake_client):
     stage, project, cmd = fake.started[0]
     assert stage == "fetch" and project == "new-clip"
     assert cmd[-4:] == ["fetch", "http://x", "--name", "new-clip"]
+
+
+def test_post_projects_starts_fetch_with_count(fake_client):
+    c, fake = fake_client
+    resp = c.post("/api/projects", json={"url": "http://x", "name": "Count Clip", "count": 6})
+    assert resp.status_code == 202
+    stage, project, cmd = fake.started[0]
+    assert stage == "fetch" and project == "count-clip"
+    assert cmd[-6:] == ["fetch", "http://x", "--name", "count-clip", "--count", "6"]
+
+
+def test_post_projects_text_payload(client):
+    c, cfg, _ = client
+    resp = c.post(
+        "/api/projects",
+        json={"name": "Text Project", "text": "Some instruction text"},
+    )
+    assert resp.status_code == 201
+    data = resp.get_json()
+    assert data["source"]["type"] == "text"
+    assert data["source"]["title"] == "Text Project"
+    stages = {s["stage"]: s["status"] for s in data["stages"]}
+    assert stages["fetch"] == "skipped"
+    assert stages["transcribe"] == "skipped"
+    assert stages["ideate"] == "ready"
+
+    # Disk verification
+    project_dir = cfg.projects_dir / "text-project"
+    transcript_file = project_dir / "transcript" / "transcript.txt"
+    assert transcript_file.read_text(encoding="utf-8") == "Some instruction text"
+
+
+def test_post_projects_text_payload_with_count(client):
+    c, cfg, _ = client
+    resp = c.post(
+        "/api/projects",
+        json={"name": "Text Project Count", "text": "Some instruction text", "count": 8},
+    )
+    assert resp.status_code == 201
+    data = resp.get_json()
+    assert data["settings"] == {"count": 8}
+    m = Manifest.load(cfg.projects_dir / "text-project-count" / "manifest.json")
+    assert m.settings == {"count": 8}
+    assert m.get_setting("count") == 8
+
+
+def test_post_projects_file_upload(client):
+    c, cfg, _ = client
+    resp = c.post(
+        "/api/projects",
+        data={
+            "name": "File Project",
+            "file": (io.BytesIO(b"hello markdown"), "notes.md"),
+        },
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 201
+    data = resp.get_json()
+    assert data["source"]["type"] == "file"
+    assert data["source"]["title"] == "File Project"
+    assert data["source"]["file"] == "notes.md"
+    stages = {s["stage"]: s["status"] for s in data["stages"]}
+    assert stages["fetch"] == "skipped"
+    assert stages["transcribe"] == "skipped"
+    assert stages["ideate"] == "ready"
+
+    # Disk verification
+    project_dir = cfg.projects_dir / "file-project"
+    transcript_file = project_dir / "transcript" / "transcript.txt"
+    assert transcript_file.read_text(encoding="utf-8") == "hello markdown"
+
+
+def test_post_projects_file_upload_with_count(client):
+    c, cfg, _ = client
+    resp = c.post(
+        "/api/projects",
+        data={
+            "name": "File Project Count",
+            "file": (io.BytesIO(b"hello markdown"), "notes.md"),
+            "count": 5,
+        },
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 201
+    data = resp.get_json()
+    assert data["settings"] == {"count": 5}
+    m = Manifest.load(cfg.projects_dir / "file-project-count" / "manifest.json")
+    assert m.settings == {"count": 5}
+    assert m.get_setting("count") == 5
+
+
+@pytest.mark.parametrize("bad_count", ["bad", 0, -1])
+def test_post_projects_invalid_count_returns_422(client, bad_count):
+    c, _, _ = client
+    resp = c.post("/api/projects", json={"name": "Bad Count", "text": "abc", "count": bad_count})
+    assert resp.status_code == 422
+    assert "count must be an integer >= 1" in resp.get_json()["error"]
+
+
+def test_post_projects_file_unsupported_extension(client):
+    c, _, _ = client
+    resp = c.post(
+        "/api/projects",
+        data={
+            "name": "Pdf Project",
+            "file": (io.BytesIO(b"%PDF-1.4..."), "notes.pdf"),
+        },
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "only .txt and .md files are supported"
+
+
+def test_post_projects_file_exceeds_5mb(client):
+    c, _, _ = client
+    big_data = b"x" * (5 * 1024 * 1024 + 1)
+    resp = c.post(
+        "/api/projects",
+        data={
+            "name": "Big Project",
+            "file": (io.BytesIO(big_data), "big.txt"),
+        },
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "file exceeds 5MB limit"
+
+
+def test_post_projects_neither_url_text_nor_file(client):
+    c, _, _ = client
+    resp = c.post("/api/projects", json={"name": "No Source"})
+    assert resp.status_code == 400
+    assert "error" in resp.get_json()
+
+
+def test_post_projects_multiple_sources_rejected(client):
+    c, _, _ = client
+    resp = c.post(
+        "/api/projects",
+        json={"name": "Both", "url": "http://x", "text": "y"},
+    )
+    assert resp.status_code == 400
+    assert "error" in resp.get_json()
+
+
+def test_post_projects_file_invalid_utf8(client):
+    c, _, _ = client
+    resp = c.post(
+        "/api/projects",
+        data={
+            "name": "Invalid UTF8",
+            "file": (io.BytesIO(b"\xff\xfe\x00\x00"), "invalid.txt"),
+        },
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 400
+    assert "error" in resp.get_json()
+
+
+def test_post_projects_existing_project_conflict_and_force(client):
+    c, _, _ = client
+    resp = c.post("/api/projects", json={"name": "demo", "text": "duplicate"})
+    assert resp.status_code == 409
+    assert "already exists" in resp.get_json()["error"]
+
+    resp_force = c.post("/api/projects", json={"name": "demo", "text": "overwritten", "force": True})
+    assert resp_force.status_code == 201
 
 
 def test_stream_returns_buffered_event(fake_client):
@@ -452,6 +643,41 @@ def test_put_cadence_weekdays_bool_is_422(client):
     assert r.status_code == 422
 
 
+def test_put_cadence_with_daily_times(client):
+    c, _, project = client
+    r = c.put(
+        "/api/projects/demo/publish/cadence",
+        json={
+            "start": "2026-09-20T10:00:00Z",
+            "times": ["10:00", "14:00", "19:00"],
+            "weekdays": [1, 2, 3],
+        },
+    )
+    assert r.status_code == 200
+    from shorts.project import Manifest
+    assert Manifest.load(project.manifest_path).get_publish()["times"] == ["10:00", "14:00", "19:00"]
+    body = r.get_json()
+    assert body["cadence"]["times"] == ["10:00", "14:00", "19:00"]
+    assert body["cadence"]["weekdays"] == [1, 2, 3]
+
+    r2 = c.put(
+        "/api/projects/demo/publish/cadence",
+        json={"start": "2026-09-20T10:00:00Z", "interval_hours": 12},
+    )
+    assert r2.status_code == 200
+    assert "times" not in Manifest.load(project.manifest_path).get_publish()
+    assert "times" not in (r2.get_json()["cadence"] or {})
+
+
+def test_put_cadence_invalid_times(client):
+    c, _, _ = client
+    start = "2026-09-20T10:00:00Z"
+    for bad in ["10:00", 123, ["99:99"], ["invalid"], [123], ["10:00", "bad"]]:
+        r = c.put("/api/projects/demo/publish/cadence", json={"start": start, "times": bad})
+        assert r.status_code == 422
+        assert r.get_json()["error"] == "times must be a list of HH:MM strings"
+
+
 def test_put_publish_at(client):
     c, _, project = client
     r = c.put("/api/projects/demo/ideas/01-x/publish-at", json={"publish_at": "2026-10-01T12:00:00Z"})
@@ -478,3 +704,137 @@ def test_post_youtube_auth_builds_argv(fake_client):
     assert c.post("/api/youtube/auth").status_code == 202
     stage, _project, cmd = fake.started[-1]
     assert stage == "youtube-auth" and cmd[-2:] == ["youtube", "auth"]
+
+
+def test_post_refine_title(client, monkeypatch):
+    c, _, _ = client
+    import shorts.web.app as web_app
+
+    monkeypatch.setattr(web_app, "refine_idea_text", lambda *args, **kwargs: "Punchy New Title")
+    resp = c.post("/api/projects/demo/ideas/01-x/refine", json={"field": "title"})
+    assert resp.status_code == 200
+    assert resp.get_json() == {"field": "title", "result": "Punchy New Title"}
+
+
+def test_post_refine_description(client, monkeypatch):
+    c, _, _ = client
+    import shorts.web.app as web_app
+
+    monkeypatch.setattr(web_app, "refine_idea_text", lambda *args, **kwargs: "Engaging new description.")
+    resp = c.post("/api/projects/demo/ideas/01-x/refine", json={"field": "description"})
+    assert resp.status_code == 200
+    assert resp.get_json() == {"field": "description", "result": "Engaging new description."}
+
+
+def test_post_refine_tags(client, monkeypatch):
+    c, _, _ = client
+    import shorts.web.app as web_app
+
+    monkeypatch.setattr(web_app, "refine_idea_text", lambda *args, **kwargs: "tag1, tag2, tag3")
+    resp = c.post("/api/projects/demo/ideas/01-x/refine", json={"field": "tags"})
+    assert resp.status_code == 200
+    assert resp.get_json() == {"field": "tags", "result": "tag1, tag2, tag3"}
+
+
+def test_post_refine_with_prompt_and_current_values(client, monkeypatch):
+    c, _, project = client
+    manifest = Manifest.load(project.manifest_path)
+    manifest.source = {"title": "Source Video"}
+    manifest.save(project.manifest_path)
+
+    import shorts.web.app as web_app
+    recorded_kwargs = {}
+
+    def mock_refine(*args, **kwargs):
+        recorded_kwargs.update(kwargs)
+        return "Refined Result"
+
+    monkeypatch.setattr(web_app, "refine_idea_text", mock_refine)
+
+    resp = c.post(
+        "/api/projects/demo/ideas/01-x/refine",
+        json={
+            "field": "title",
+            "prompt": "make it punchy",
+            "current_title": "Custom Title",
+            "current_description": "Custom Description",
+            "current_tags": "tag1, tag2",
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.get_json() == {"field": "title", "result": "Refined Result"}
+    assert recorded_kwargs["field"] == "title"
+    assert recorded_kwargs["user_prompt"] == "make it punchy"
+    assert recorded_kwargs["current_title"] == "Custom Title"
+    assert recorded_kwargs["current_description"] == "Custom Description"
+    assert recorded_kwargs["current_tags"] == "tag1, tag2"
+    assert recorded_kwargs["narration"] == "the script"
+    assert recorded_kwargs["hook"] == "h"
+    assert recorded_kwargs["video_title"] == "Source Video"
+    assert recorded_kwargs["model"] == "gpt-4.1"
+
+    # Also verify fallback to file defaults when current values are omitted
+    recorded_kwargs.clear()
+    resp2 = c.post(
+        "/api/projects/demo/ideas/01-x/refine",
+        json={"field": "description"},
+    )
+    assert resp2.status_code == 200
+    assert recorded_kwargs["field"] == "description"
+    assert recorded_kwargs["user_prompt"] == ""
+    assert recorded_kwargs["current_title"] == "Demo Idea"
+    assert recorded_kwargs["current_description"] == "old caption"
+    assert recorded_kwargs["current_tags"] == "old, tags"
+
+
+def test_post_refine_invalid_field(client):
+    c, _, _ = client
+    # Missing field
+    resp_empty = c.post("/api/projects/demo/ideas/01-x/refine", json={})
+    assert resp_empty.status_code == 422
+    assert "field must be one of: title, description, tags" in resp_empty.get_json()["error"]
+
+    # Invalid field
+    resp_invalid = c.post("/api/projects/demo/ideas/01-x/refine", json={"field": "hook"})
+    assert resp_invalid.status_code == 422
+    assert "field must be one of: title, description, tags" in resp_invalid.get_json()["error"]
+
+
+def test_post_refine_not_found(client):
+    c, _, _ = client
+    # Nonexistent project
+    resp_proj = c.post("/api/projects/nonexistent/ideas/01-x/refine", json={"field": "title"})
+    assert resp_proj.status_code == 404
+    assert "no such project: nonexistent" in resp_proj.get_json()["error"]
+
+    # Nonexistent idea slug
+    resp_idea = c.post("/api/projects/demo/ideas/nonexistent-idea/refine", json={"field": "title"})
+    assert resp_idea.status_code == 404
+    assert "no such idea: nonexistent-idea" in resp_idea.get_json()["error"]
+
+
+def test_post_refine_openai_error(client, monkeypatch):
+    c, cfg, _ = client
+    import dataclasses
+    import shorts.web.app as web_app
+
+    # Missing API key (None and empty string)
+    app_none = web_app.create_app(dataclasses.replace(cfg, openai_api_key=None))
+    resp_none = app_none.test_client().post("/api/projects/demo/ideas/01-x/refine", json={"field": "title"})
+    assert resp_none.status_code == 500
+    assert "OPENAI_API_KEY is not configured" in resp_none.get_json()["error"]
+
+    app_empty = web_app.create_app(dataclasses.replace(cfg, openai_api_key=""))
+    resp_empty = app_empty.test_client().post("/api/projects/demo/ideas/01-x/refine", json={"field": "title"})
+    assert resp_empty.status_code == 500
+    assert "OPENAI_API_KEY is not configured" in resp_empty.get_json()["error"]
+
+    # OpenAI / execution exception
+    def mock_raise(*args, **kwargs):
+        raise RuntimeError("OpenAI rate limit reached")
+
+    monkeypatch.setattr(web_app, "refine_idea_text", mock_raise)
+    resp_err = c.post("/api/projects/demo/ideas/01-x/refine", json={"field": "title"})
+    assert resp_err.status_code == 500
+    assert "OpenAI rate limit reached" in resp_err.get_json()["error"]
+

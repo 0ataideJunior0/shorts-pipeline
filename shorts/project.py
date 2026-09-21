@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
@@ -155,6 +156,7 @@ class Manifest:
     stages: dict = field(default_factory=dict)
     ideas: dict = field(default_factory=dict)
     publish: dict = field(default_factory=dict)
+    settings: dict = field(default_factory=dict)
 
     @classmethod
     def new(cls, name: str) -> "Manifest":
@@ -169,6 +171,7 @@ class Manifest:
             stages=data.get("stages", {}),
             ideas=data.get("ideas", {}),
             publish=data.get("publish", {}),
+            settings=data.get("settings", {}),
         )
 
     def _to_dict(self) -> dict:
@@ -178,6 +181,7 @@ class Manifest:
             "stages": self.stages,
             "ideas": self.ideas,
             "publish": self.publish,
+            "settings": self.settings,
         }
 
     def save(self, path: Path) -> None:
@@ -196,11 +200,21 @@ class Manifest:
         entry.update(fields)
         self.stages[stage] = entry
 
+    def stage_skipped(self, stage: str, **fields) -> None:
+        entry = self.stages.get(stage, {})
+        entry["status"] = "skipped"
+        entry["at"] = utcnow_iso()
+        entry.update(fields)
+        self.stages[stage] = entry
+
     def get_stage(self, stage: str) -> dict | None:
         return self.stages.get(stage)
 
     def is_stage_done(self, stage: str) -> bool:
         return self.stages.get(stage, {}).get("status") == "done"
+
+    def is_stage_skipped(self, stage: str) -> bool:
+        return (self.stages.get(stage) or {}).get("status") == "skipped"
 
     def set_idea(self, slug: str, **fields) -> None:
         entry = self.ideas.get(slug, {})
@@ -215,3 +229,10 @@ class Manifest:
 
     def get_publish(self) -> dict:
         return self.publish
+
+    def get_setting(self, key: str, default: Any = None) -> Any:
+        return self.settings.get(key, default)
+
+    def set_setting(self, key: str, value: Any) -> None:
+        self.settings[key] = value
+

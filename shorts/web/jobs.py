@@ -31,6 +31,7 @@ def stage_argv(
     force: bool = False,
     slugs: list[str] | None = None,
     platform: str = "youtube",
+    count: int | None = None,
 ) -> list[str]:
     if stage == "publish":
         argv = ["publish", name, "--platform", platform]
@@ -50,8 +51,12 @@ def stage_argv(
         if not url:
             raise ValueError("fetch requires a url")
         argv = ["fetch", url, "--name", name]
+        if count is not None:
+            argv += ["--count", str(count)]
     else:
         argv = [stage, name]
+        if stage == "ideate" and count is not None:
+            argv += ["--count", str(count)]
     if force:
         argv.append("--force")
     return argv

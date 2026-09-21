@@ -9,3 +9,9 @@ docs
 .youtube_token.json
 .tiktok_token.json
 client_secret*.json
+.worktree/
+.claude
+.agents/skills/ai-memory*
+.agents
+.specs
+AGENTS.md

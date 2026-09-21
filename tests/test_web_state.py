@@ -91,6 +91,22 @@ def test_stage_rows_after_fetch_and_transcribe(tmp_path):
     assert by["ideate"]["status"] == "ready"
 
 
+def test_stage_rows_when_fetch_and_transcribe_skipped(tmp_path):
+    cfg, project = _project(tmp_path)
+    project.transcript_txt_path.write_text("user idea text")
+    m = Manifest.load(project.manifest_path)
+    m.stage_skipped("fetch")
+    m.stage_skipped("transcribe")
+    m.save(project.manifest_path)
+    rows = stage_rows(project, m, cfg)
+    by = {r["stage"]: r for r in rows}
+    assert by["fetch"]["status"] == "skipped"
+    assert by["fetch"]["detail"] == "skipped"
+    assert by["transcribe"]["status"] == "skipped"
+    assert by["transcribe"]["detail"] == "skipped"
+    assert by["ideate"]["status"] == "ready"
+
+
 def test_idea_freshness_missing_then_fresh(tmp_path):
     cfg, project = _project(tmp_path)
     narration = "the script"
@@ -123,6 +139,8 @@ def test_build_snapshot_shape(tmp_path):
     assert [s["stage"] for s in snap["stages"]] == [
         "fetch", "transcribe", "ideate", "voice", "plan", "render",
     ]
+    assert "settings" in snap
+    assert snap["settings"] == {}
     assert snap["ideas"][0]["slug"] == "01-x"
     assert snap["ideas"][0]["approved"] is True
     assert snap["ideas"][0]["narration"] == "script one"

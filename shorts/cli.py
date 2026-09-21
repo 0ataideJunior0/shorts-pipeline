@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import click
 
 from shorts.config import Config, ConfigError, load_config
 from shorts.ideas import sync_idea_state
 from shorts.project import Manifest, Project, slugify
+from shorts.prompt import ensure_prompt_file
 from shorts.publish_target import PublishAuthError, PublishConfigError
 from shorts.stages import fetch as fetch_stage
 from shorts.stages import ideate as ideate_stage
@@ -40,11 +43,95 @@ def _resolve(config: Config, name: str | None) -> Project:
 
 
 @cli.command()
+@click.argument("name")
+@click.option("--text", default=None, help="Plain text instruction or script content.")
+@click.option("--file", default=None, type=click.Path(path_type=Path), help="Path to .txt or .md file.")
+@click.option("--force", is_flag=True, help="Overwrite existing project if it exists.")
+@click.option(
+    "--count",
+    type=click.IntRange(min=1),
+    default=None,
+    help="Target number of shorts to generate.",
+)
+@click.pass_context
+def init(
+    ctx: click.Context,
+    name: str,
+    text: str | None,
+    file: Path | None,
+    force: bool,
+    count: int | None,
+) -> None:
+    """Initialize a new project from text or a file."""
+    if (text is None and file is None) or (text is not None and file is not None):
+        raise click.ClickException("Provide either --text or --file, but not both.")
+
+    if file is not None:
+        if file.suffix.lower() not in (".txt", ".md"):
+            raise click.ClickException("Only .txt and .md files are supported.")
+        if not file.exists():
+            raise click.ClickException(f"File not found: {file}")
+        try:
+            content = file.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise click.ClickException(f"Failed to read file as UTF-8: {exc}")
+    else:
+        content = text
+
+    config = _config(ctx)
+    resolved_name = slugify(name)
+    project_root = config.projects_dir / resolved_name
+    if project_root.exists():
+        if not force:
+            raise click.ClickException(
+                f"Project '{resolved_name}' already exists. Use --force to overwrite."
+            )
+        project = Project.load(config.projects_dir, resolved_name)
+    else:
+        project = Project.create(config.projects_dir, resolved_name)
+
+    project.ensure_dirs()
+    ensure_prompt_file(project)
+    project.transcript_txt_path.write_text(content, encoding="utf-8")
+
+    manifest = (
+        Manifest.load(project.manifest_path)
+        if project.manifest_path.exists()
+        else Manifest.new(resolved_name)
+    )
+    manifest.source = {
+        "type": "file" if file else "text",
+        "title": name,
+    }
+    if file:
+        manifest.source["file"] = str(Path(file).resolve())
+    manifest.stage_skipped("fetch")
+    manifest.stage_skipped("transcribe")
+    if count is not None:
+        manifest.set_setting("count", count)
+    manifest.save(project.manifest_path)
+
+    click.echo(f"init: initialized project '{resolved_name}' -> {project.root}")
+
+
+@cli.command()
 @click.argument("url")
 @click.option("--name", default=None, help="Project name (default: from the video title).")
 @click.option("--force", is_flag=True, help="Re-download even if the video exists.")
+@click.option(
+    "--count",
+    type=click.IntRange(min=1),
+    default=None,
+    help="Target number of shorts to generate.",
+)
 @click.pass_context
-def fetch(ctx: click.Context, url: str, name: str | None, force: bool) -> None:
+def fetch(
+    ctx: click.Context,
+    url: str,
+    name: str | None,
+    force: bool,
+    count: int | None,
+) -> None:
     """Download a YouTube video as a new project's source."""
     config = _config(ctx)
     resolved_name = slugify(name or fetch_stage.probe_title(url))
@@ -55,6 +142,10 @@ def fetch(ctx: click.Context, url: str, name: str | None, force: bool) -> None:
         project = Project.create(config.projects_dir, resolved_name)
     if not project.manifest_path.exists():
         Manifest.new(resolved_name).save(project.manifest_path)
+    if count is not None:
+        manifest = Manifest.load(project.manifest_path)
+        manifest.set_setting("count", count)
+        manifest.save(project.manifest_path)
     fetch_stage.run(project, config, url=url, force=force)
 
 
@@ -71,11 +162,22 @@ def transcribe(ctx: click.Context, name: str | None, force: bool) -> None:
 @cli.command()
 @click.argument("name", required=False)
 @click.option("--force", is_flag=True)
+@click.option(
+    "--count",
+    type=click.IntRange(min=1),
+    default=None,
+    help="Number of shorts to generate (overrides project setting).",
+)
 @click.pass_context
-def ideate(ctx: click.Context, name: str | None, force: bool) -> None:
+def ideate(
+    ctx: click.Context,
+    name: str | None,
+    force: bool,
+    count: int | None,
+) -> None:
     """Generate shorts ideas from the transcript."""
     config = _config(ctx)
-    ideate_stage.run(_resolve(config, name), config, force=force)
+    ideate_stage.run(_resolve(config, name), config, force=force, count=count)
 
 
 @cli.command()

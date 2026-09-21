@@ -126,3 +126,146 @@ def generate_ideas(
             )
         )
     return out
+
+
+_REFINE_SYSTEM_PROMPTS = {
+    "title": (
+        "You are an expert YouTube Shorts creator and copywriter. Refine and optimize the YouTube Short title.\n"
+        "Produce a punchy, high-CTR YouTube Short title in the language of the narration.\n"
+        "Rules:\n"
+        "- Must be a single line.\n"
+        "- No quotes.\n"
+        "- No markdown formatting (no bold, no italics).\n"
+        "- No prefixes like 'Title:' or explanations.\n"
+        "- Return ONLY the refined title."
+    ),
+    "description": (
+        "You are an expert YouTube Shorts creator and copywriter. Refine and optimize the YouTube Short description.\n"
+        "Produce a 1-3 sentence engaging YouTube Short publish caption in the language of the narration.\n"
+        "Rules:\n"
+        "- 1-3 sentences.\n"
+        "- No markdown fences or formatting.\n"
+        "- No quotes.\n"
+        "- No prefixes like 'Description:' or explanations.\n"
+        "- Return ONLY the refined description."
+    ),
+    "tags": (
+        "You are an expert YouTube Shorts creator and SEO specialist. Refine and optimize the YouTube Short upload tags.\n"
+        "Produce 5-12 comma-separated YouTube upload tags/keywords in the language of the narration.\n"
+        "Rules:\n"
+        "- 5-12 comma-separated tags.\n"
+        "- No '#' hashtags (plain keywords or short phrases only).\n"
+        "- No quotes or markdown formatting.\n"
+        "- No prefixes like 'Tags:' or explanations.\n"
+        "- Return ONLY the comma-separated tags."
+    ),
+}
+
+
+def _strip_wrappers(s: str) -> str:
+    while True:
+        prev = s
+        s = s.strip()
+        s = s.strip('\'"“”‘’`')
+        if (s.startswith("**") and s.endswith("**")) or (
+            s.startswith("__") and s.endswith("__")
+        ):
+            s = s[2:-2]
+        if (s.startswith("*") and s.endswith("*")) or (
+            s.startswith("_") and s.endswith("_")
+        ):
+            s = s[1:-1]
+        s = s.strip()
+        if s == prev:
+            break
+    return s
+
+
+def _clean_refined_text(text: str, field: str) -> str:
+    cleaned = text.strip()
+    if cleaned.startswith("```") and cleaned.endswith("```"):
+        lines = cleaned.splitlines()
+        if len(lines) >= 2:
+            cleaned = "\n".join(lines[1:-1]).strip()
+        else:
+            cleaned = cleaned.strip("`").strip()
+
+    if field == "title":
+        lines = [line.strip() for line in cleaned.splitlines() if line.strip()]
+        cleaned = lines[0] if lines else ""
+        cleaned = _strip_wrappers(cleaned)
+        if cleaned.lower().startswith("title:"):
+            cleaned = cleaned[6:].strip()
+        cleaned = _strip_wrappers(cleaned)
+    elif field == "description":
+        cleaned = _strip_wrappers(cleaned)
+        if cleaned.lower().startswith("description:"):
+            cleaned = cleaned[12:].strip()
+        cleaned = _strip_wrappers(cleaned)
+    elif field == "tags":
+        cleaned = _strip_wrappers(cleaned)
+        if cleaned.lower().startswith("tags:"):
+            cleaned = cleaned[5:].strip()
+        cleaned = _strip_wrappers(cleaned)
+        tags_list = [
+            _strip_wrappers(t.strip().lstrip("#").strip())
+            for t in cleaned.split(",")
+            if t.strip()
+        ]
+        cleaned = ", ".join(t for t in tags_list if t)
+    else:
+        cleaned = _strip_wrappers(cleaned)
+
+    return cleaned
+
+
+def refine_idea_text(
+    client: OpenAI,
+    *,
+    field: str,
+    user_prompt: str = "",
+    current_title: str = "",
+    current_description: str = "",
+    current_tags: str = "",
+    narration: str = "",
+    hook: str = "",
+    video_title: str = "",
+    model: str,
+) -> str:
+    if field not in ("title", "description", "tags"):
+        raise ValueError(f"invalid field: {field}")
+
+    system_prompt = _REFINE_SYSTEM_PROMPTS[field]
+
+    context_lines: list[str] = []
+    if video_title:
+        context_lines.append(f"Source video title: {video_title}")
+    if hook:
+        context_lines.append(f"Hook: {hook}")
+    if narration:
+        context_lines.append(f"Narration: {narration}")
+    if current_title:
+        context_lines.append(f"Current title: {current_title}")
+    if current_description:
+        context_lines.append(f"Current description: {current_description}")
+    if current_tags:
+        context_lines.append(f"Current tags: {current_tags}")
+    if user_prompt:
+        context_lines.append(f"User instruction: {user_prompt.strip()}")
+
+    user_prompt_content = "\n".join(context_lines)
+    if user_prompt_content:
+        user_prompt_content += f"\n\nRefine the {field}."
+    else:
+        user_prompt_content = f"Refine the {field}."
+
+    resp = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt_content},
+        ],
+    )
+    raw_text = resp.choices[0].message.content or ""
+    return _clean_refined_text(raw_text, field)
+

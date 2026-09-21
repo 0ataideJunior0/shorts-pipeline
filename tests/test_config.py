@@ -47,6 +47,7 @@ def _write(root: Path, *, toml: str | None = None, env_key: str | None = "sk-tes
 @pytest.fixture(autouse=True)
 def _clear_key(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("SHORTS_IDEATE_COUNT", raising=False)
 
 
 def _write_env(tmp_path, *, openai_key: str = "sk-test"):
@@ -306,3 +307,32 @@ def test_tiktok_bad_privacy_level(tmp_path):
     _write_env(tmp_path)
     with pytest.raises(ConfigError, match="tiktok.privacy_level must be one of"):
         load_config(tmp_path)
+
+
+def test_env_ideate_count_overrides_config(tmp_path, monkeypatch):
+    _write(tmp_path)
+    monkeypatch.setenv("SHORTS_IDEATE_COUNT", "10")
+    cfg = load_config(tmp_path)
+    assert cfg.ideate.count == 10
+
+
+@pytest.mark.parametrize("bad_val", ["0", "-5", "abc", "1.5"])
+def test_env_ideate_count_invalid(tmp_path, monkeypatch, bad_val):
+    _write(tmp_path)
+    monkeypatch.setenv("SHORTS_IDEATE_COUNT", bad_val)
+    with pytest.raises(ConfigError, match="SHORTS_IDEATE_COUNT must be an integer >= 1"):
+        load_config(tmp_path)
+
+
+def test_env_ideate_count_unset(tmp_path):
+    _write(tmp_path)
+    cfg = load_config(tmp_path)
+    assert cfg.ideate.count == 6
+
+
+def test_env_ideate_count_empty_uses_toml(tmp_path, monkeypatch):
+    _write(tmp_path)
+    monkeypatch.setenv("SHORTS_IDEATE_COUNT", "")
+    cfg = load_config(tmp_path)
+    assert cfg.ideate.count == 6
+

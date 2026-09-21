@@ -15,6 +15,14 @@
     --mon-bg:#0f1216; --mon-ink:#cbd3dc; --mon-line:#20262e;
     --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, sans-serif;
     --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    /* broadcast deck tokens */
+    --cadence-cyan:#38bdf8;
+    --cadence-cyan-tint:rgba(56, 189, 248, 0.12);
+    --cadence-cyan-glow:rgba(56, 189, 248, 0.25);
+    --deck-surf:#171c24;
+    --deck-well:#101318;
+    --deck-line:#293240;
+    --deck-line-hi:#3b4759;
   }
   @media (prefers-color-scheme: light) {
     :root {
@@ -24,6 +32,13 @@
       --ok:#1f7d61;  --ok-tint:#e3f1eb;
       --fail:#b23a30; --fail-tint:#f6e2df;
       --sel:#2f6cc4;
+      --cadence-cyan:#0284c7;
+      --cadence-cyan-tint:rgba(2, 132, 199, 0.08);
+      --cadence-cyan-glow:rgba(2, 132, 199, 0.2);
+      --deck-surf:#f8fafc;
+      --deck-well:#edf2f7;
+      --deck-line:#d3dae3;
+      --deck-line-hi:#b8c3d1;
     }
   }
 
@@ -59,6 +74,11 @@
   .btn:disabled { opacity:.45; cursor:default; }
   .btn-run { background:var(--run); border-color:var(--run); color:#20160a; font-weight:600; }
   .btn-run:hover:not(:disabled) { filter:brightness(1.07); }
+  .btn-primary { background:var(--sel); border-color:var(--sel); color:#0f1216; font-weight:600; }
+  .btn-primary:hover:not(:disabled) { filter:brightness(1.08); }
+  @media (prefers-color-scheme: light) {
+    .btn-primary { color:#ffffff; }
+  }
   .btn-stop { background:transparent; border-color:var(--fail); color:var(--fail); }
   .btn-stop:hover:not(:disabled) { background:var(--fail-tint); }
 
@@ -96,6 +116,8 @@
   .seg.stale { background:var(--run-tint); }
   .seg.stale .stt { color:var(--run); }
   .seg.blocked { background:var(--panel); opacity:.5; }
+  .seg.skipped { background:var(--panel); opacity:.6; }
+  .seg.skipped .stt { color:var(--ink-dim); font-style:italic; }
   .seg.armed:not(.running) { box-shadow: inset 0 0 0 2px var(--sel); }
   .seg.running {
     background:var(--run-tint); color:var(--ink);
@@ -149,6 +171,16 @@
   .frow .fr.fresh { color:var(--ok); }
   .frow .fr.stale { color:var(--run); }
   .field-lbl { display:block; margin:.6rem 0 .15rem; font:11px var(--mono); color:var(--ink-dim); }
+  .field-hdr { display:flex; align-items:center; justify-content:space-between; margin:.6rem 0 .15rem; }
+  .field-hdr .field-lbl { margin:0; }
+  .refine-btn {
+    font-size:11.5px; font-family:var(--sans); padding:3px 8px;
+    background:transparent; border:1px solid var(--line); color:var(--ink-dim);
+    border-radius:5px; line-height:1.2;
+  }
+  .refine-btn:hover:not(:disabled) {
+    color:var(--ink); border-color:var(--sel); background:var(--panel-2);
+  }
   .card .tags-in { width:100%; font:12.5px var(--mono); padding:7px 9px; }
   .tabs { display:flex; gap:0; margin:.7rem 0 0; border-bottom:1px solid var(--line); }
   .tab {
@@ -163,8 +195,15 @@
 
   /* ---- projects list ---- */
   .newproj { display:flex; flex-direction:column; gap:.55rem; max-width:26rem; margin:1rem 0 1.6rem; }
+  .newproj-tabs { display:flex; gap:0; margin-bottom:.75rem; border-bottom:1px solid var(--line); }
+  .newproj-pane { display:flex; flex-direction:column; gap:.55rem; }
   .newproj label { font-size:12.5px; color:var(--ink-dim); }
-  .newproj label input { display:block; width:100%; margin-top:.2rem; }
+  .newproj label input, .newproj label textarea { display:block; width:100%; margin-top:.2rem; }
+  .newproj textarea { font:12.5px/1.5 var(--sans); }
+  input[type=file] {
+    background:var(--panel-2); color:var(--ink); border:1px solid var(--line);
+    border-radius:6px; padding:6px 9px; font:13px var(--sans);
+  }
   .plist a.p-row {
     display:flex; align-items:center; gap:.8rem; padding:.6rem .1rem;
     border-bottom:1px solid var(--line); color:var(--ink);
@@ -177,6 +216,7 @@
   .mini i.done { background:var(--ok); }
   .mini i.stale { background:var(--run); }
   .mini i.ready { background:var(--sel); }
+  .mini i.skipped { background:var(--line); opacity:.4; }
 
   /* ---- monitor: persists across re-renders; pins to the foot only while a stage runs ---- */
   #monitor {
@@ -241,27 +281,231 @@
   .toast.err { border-left-color:var(--fail); }
   @keyframes toast-in { from { opacity:0; transform:translateY(6px); } }
 
-  /* ---- publish panel ---- */
-  .pub-conn { display:flex; align-items:center; gap:.75rem; margin:.2rem 0 .8rem; font:12.5px var(--mono); }
-  .pub-conn .ok { color:var(--ok); }
-  .pub-conn .bad { color:var(--fail); }
-  /* one block per platform: a rule + name separates them without shouting */
-  .pub-block { margin:0 0 1.1rem; }
-  .pub-block + .pub-block { border-top:1px solid var(--line); padding-top:.9rem; }
-  .pub-conn .pub-name { font-weight:600; color:var(--ink); letter-spacing:.02em; }
-  .pub-note { margin:-.4rem 0 .7rem; font-size:12.5px; color:var(--ink-dim); }
+  /* ---- refine modal ---- */
+  #refine-modal {
+    background:var(--panel); color:var(--ink);
+    border:1px solid var(--line); border-radius:8px;
+    padding:1.2rem; max-width:28rem; width:90%;
+    box-shadow:0 16px 36px -10px rgba(0,0,0,.6);
+  }
+  #refine-modal::backdrop {
+    background:rgba(0,0,0,0.6);
+  }
+
+  /* ---- broadcast publish & schedule deck ---- */
+  .pub-status-bar {
+    display:flex; align-items:center; justify-content:space-between; gap:1rem;
+    background:var(--panel); border:1px solid var(--deck-line); border-radius:8px;
+    padding:10px 14px; margin:.2rem 0 .9rem;
+  }
+  .pub-status-main { display:flex; align-items:center; gap:.65rem; font:12.5px var(--mono); }
+  .status-dot {
+    width:8px; height:8px; border-radius:50%; background:var(--ink-dim); flex-shrink:0;
+    transition:background-color 200ms ease;
+  }
+  .status-dot.ok { background:var(--ok); box-shadow:0 0 0 3px var(--ok-tint); }
+  .status-dot.bad { background:var(--fail); box-shadow:0 0 0 3px var(--fail-tint); }
+  .channel-badge {
+    background:var(--panel-2); color:var(--ink); padding:2px 7px;
+    border-radius:4px; border:1px solid var(--line); font-weight:600;
+  }
+
+  /* ---- cadence console ---- */
+  .cadence-console {
+    background:var(--panel); border:1px solid var(--deck-line); border-radius:8px;
+    overflow:hidden; margin:0 0 1.4rem;
+  }
+  .cadence-rhythm {
+    background:var(--deck-well); border-bottom:1px solid var(--deck-line);
+    padding:10px 14px; display:flex; align-items:center; justify-content:space-between;
+    gap:1rem; flex-wrap:wrap; font-size:12.5px;
+  }
+  .rhythm-metrics { display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; }
+  .rhythm-metric { color:var(--ink-dim); font-size:12.5px; }
+  .rhythm-metric b { color:var(--cadence-cyan); font-weight:600; font-family:var(--mono); }
+  .rhythm-sep { color:var(--deck-line-hi); user-select:none; }
+  .rhythm-next {
+    margin-left:auto; display:inline-flex; align-items:baseline; gap:.4rem;
+    font:12px var(--mono); color:var(--ink-dim);
+  }
+  .rhythm-next-val { color:var(--run); font-weight:600; }
+  .rhythm-next-rel { color:var(--ink-dim); opacity:.85; }
+
+  .legacy-banner {
+    background:var(--run-tint); border-bottom:1px solid var(--deck-line);
+    padding:9px 14px; font-size:12px; color:var(--run);
+    display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap;
+  }
+
+  .cadence-body { padding:14px; display:flex; flex-direction:column; gap:14px; }
+  .cadence-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .cad-panel { display:flex; flex-direction:column; gap:6px; }
+  .cad-lbl-row { display:flex; align-items:center; justify-content:space-between; gap:.5rem; }
+  .cad-lbl { font:12px var(--sans); font-weight:600; color:var(--ink); }
+  .cad-hint { font:11px var(--mono); color:var(--ink-dim); }
+  .cad-input {
+    width:100%; font:13px var(--mono); padding:7px 9px;
+    background:var(--panel-2); color:var(--ink); border:1px solid var(--line);
+    border-radius:6px;
+  }
+
+  .cad-shortcuts { display:flex; gap:.4rem; }
+  .link-btn {
+    appearance:none; background:none; border:none; padding:1px 4px;
+    font:11px var(--mono); color:var(--cadence-cyan); cursor:pointer;
+    border-radius:3px;
+  }
+  .link-btn:hover { text-decoration:underline; }
+
+  .day-matrix { display:flex; gap:5px; }
+  .day-pill {
+    appearance:none; font:12px/1 var(--mono); font-weight:600; padding:8px 0;
+    flex:1; text-align:center; border-radius:5px; border:1px solid var(--line);
+    background:var(--panel-2); color:var(--ink-dim); cursor:pointer;
+    transition:all 100ms ease;
+  }
+  .day-pill:hover:not(.active) { border-color:var(--ink-dim); color:var(--ink); }
+  .day-pill.active {
+    background:var(--cadence-cyan-tint); border-color:var(--cadence-cyan);
+    color:var(--cadence-cyan); font-weight:700;
+  }
+
+  .cad-slots-section { display:flex; flex-direction:column; gap:8px; }
+  .slot-chips-row { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+  .slot-chip {
+    display:inline-flex; align-items:center; gap:5px;
+    background:var(--panel-2); border:1px solid var(--line); border-radius:6px;
+    padding:3px 7px; font:13px var(--mono); transition:border-color 100ms ease;
+  }
+  .slot-chip:focus-within { border-color:var(--cadence-cyan); }
+  .slot-idx { font:10px var(--mono); color:var(--ink-dim); user-select:none; }
+  .slot-chip input[type=time] {
+    border:none; background:transparent; color:var(--ink);
+    font:13px var(--mono); font-weight:500; padding:1px 2px;
+  }
+  .slot-del {
+    appearance:none; background:transparent; border:none; cursor:pointer;
+    color:var(--ink-dim); font-size:15px; line-height:1; padding:0 3px;
+    border-radius:3px; display:inline-flex; align-items:center; justify-content:center;
+  }
+  .slot-del:hover { color:var(--fail); background:var(--fail-tint); }
+
+  .slot-presets { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:2px; }
+  .slot-presets-lbl { font:11px var(--mono); color:var(--ink-dim); }
+  .preset-pill {
+    appearance:none; font:11px var(--mono); background:transparent;
+    border:1px dashed var(--line); color:var(--ink-dim); padding:2px 7px;
+    border-radius:4px; cursor:pointer; transition:all 100ms ease;
+  }
+  .preset-pill:hover {
+    border-color:var(--cadence-cyan); color:var(--cadence-cyan);
+    background:var(--cadence-cyan-tint);
+  }
+  .preset-pill.in-use { opacity:.4; text-decoration:line-through; cursor:default; pointer-events:none; }
+
+  .cadence-footer {
+    background:var(--deck-well); border-top:1px solid var(--deck-line);
+    padding:10px 14px; display:flex; align-items:center; justify-content:space-between;
+    gap:1rem; flex-wrap:wrap;
+  }
+  .cad-status {
+    font:12px var(--mono); color:var(--ink-dim);
+    display:inline-flex; align-items:center; gap:.4rem;
+  }
+  .cad-status.dirty { color:var(--run); }
+  .cad-status.dirty .status-dot { background:var(--run); }
+  .cad-status.synced .status-dot { background:var(--ok); }
+  .cad-actions { display:flex; align-items:center; gap:.6rem; }
+
+  /* ---- transmission rundown table ---- */
+  #pub-tiktok { margin-top:1.4rem; padding-top:1.1rem; border-top:1px solid var(--deck-line); }
+  .pub-note { margin:.2rem 0 .7rem; font-size:12.5px; color:var(--ink-dim); }
   .pub-note code { font:12px var(--mono); }
-  .cadence { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; margin:.2rem 0 .9rem; }
-  .cadence input[type=number] { width:4rem; }
-  .cadence .wd { display:inline-flex; gap:.3rem; font:11px var(--mono); color:var(--ink-dim); }
-  .cadence .cad-note { font-size:12px; }
-  .prow { display:flex; align-items:center; gap:.7rem; flex-wrap:wrap; padding:.5rem 0; border-bottom:1px solid var(--line); }
-  .prow .pt { flex:1 1 12rem; font-weight:600; font-size:13px; }
-  .prow .chip { font:11px var(--mono); padding:.1rem .5rem; border:1px solid var(--line); border-radius:999px; color:var(--ink-dim); }
-  .prow .chip.up { color:var(--ok); border-color:var(--ok); }
-  .prow .chip.sched { color:var(--sel); border-color:var(--sel); }
-  .prow .chip.bad { color:var(--fail); border-color:var(--fail); }
-  .prow input[type=datetime-local] { font:12px var(--mono); }
+  .rundown-bar {
+    display:flex; align-items:center; justify-content:space-between;
+    gap:1rem; flex-wrap:wrap; margin:0 0 .75rem;
+  }
+  .rundown-bar-sub { font-size:12px; color:var(--ink-dim); flex:1 1 18rem; }
+  .rundown-table {
+    border:1px solid var(--deck-line); border-radius:8px;
+    background:var(--panel); overflow:hidden; margin-bottom:1rem;
+  }
+  .rundown-empty { padding:1.2rem; text-align:center; color:var(--ink-dim); font-size:13px; }
+  .rundown-row {
+    display:grid; grid-template-columns:2.5rem minmax(10rem, 1fr) auto minmax(13rem, 18rem) auto;
+    align-items:center; gap:12px; padding:9px 14px;
+    border-bottom:1px solid var(--line); transition:background-color 80ms ease;
+  }
+  .rundown-row:last-child { border-bottom:none; }
+  .rundown-row:hover { background:var(--panel-2); }
+  .rundown-seq { font:11px var(--mono); color:var(--ink-dim); font-weight:600; }
+  .rundown-title-wrap { min-width:0; }
+  .rundown-title {
+    font-size:13px; font-weight:600; color:var(--ink);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block;
+  }
+  .rundown-slug { font:11px var(--mono); color:var(--ink-dim); opacity:.8; }
+
+  .rend-chip {
+    font:11px/1 var(--mono); padding:3px 7px; border-radius:999px;
+    border:1px solid var(--line); color:var(--ink-dim); white-space:nowrap;
+    display:inline-flex; align-items:center; gap:.3rem;
+  }
+  .rend-chip.fresh { color:var(--ok); border-color:var(--ok); background:var(--ok-tint); }
+  .rend-chip.stale { color:var(--run); border-color:var(--run); background:var(--run-tint); }
+  .rend-chip.missing { color:var(--fail); border-color:var(--fail); }
+
+  .rundown-airtime { display:flex; flex-direction:column; gap:3px; min-width:0; }
+  .airtime-slot { display:flex; align-items:baseline; gap:.5rem; flex-wrap:wrap; }
+  .airtime-dt { font:12.5px var(--mono); font-weight:600; color:var(--ink); }
+  .airtime-source {
+    font:10px/1 var(--mono); padding:2px 5px; border-radius:3px;
+    border:1px solid transparent; text-transform:lowercase;
+  }
+  .airtime-source.cadence {
+    background:var(--cadence-cyan-tint); border-color:var(--cadence-cyan);
+    color:var(--cadence-cyan);
+  }
+  .airtime-source.override {
+    background:var(--run-tint); border-color:var(--run);
+    color:var(--run); font-weight:600;
+  }
+  .airtime-source.draft {
+    background:var(--panel-2); border-color:var(--line);
+    color:var(--ink-dim);
+  }
+  .airtime-editor { display:flex; align-items:center; gap:.4rem; }
+  .airtime-editor input[type=datetime-local] {
+    font:11.5px var(--mono); padding:3px 6px; background:var(--panel-2);
+    color:var(--ink); border:1px solid var(--line); border-radius:4px;
+  }
+  .btn-revert {
+    appearance:none; background:transparent; border:1px solid var(--run);
+    color:var(--run); font:10.5px var(--mono); padding:3px 6px; border-radius:4px;
+    cursor:pointer; line-height:1; white-space:nowrap;
+  }
+  .btn-revert:hover { background:var(--run-tint); }
+
+  .rundown-action { display:flex; align-items:center; justify-content:flex-end; gap:.5rem; }
+  .btn-up-link {
+    font:11px var(--mono); padding:3px 8px; border-radius:999px;
+    border:1px solid var(--ok); color:var(--ok); text-decoration:none;
+    display:inline-flex; align-items:center; gap:2px;
+  }
+  .btn-up-link:hover { background:var(--ok-tint); text-decoration:none; }
+
+  @media (max-width:768px) {
+    .cadence-grid { grid-template-columns:1fr; }
+    .rundown-row {
+      grid-template-columns:1fr auto;
+      gap:8px; padding:10px 12px;
+    }
+    .rundown-seq { display:none; }
+    .rundown-col-meta { grid-column:1 / 2; }
+    .rundown-col-status { grid-column:2 / 3; justify-self:end; }
+    .rundown-airtime { grid-column:1 / 3; margin-top:2px; }
+    .rundown-action { grid-column:1 / 3; justify-content:flex-start; margin-top:4px; }
+  }
 
   @media (max-width:680px) {
     .strip { grid-template-columns:1fr; }
@@ -291,6 +535,18 @@
   </section>
 </div>
 <div id="bar" hidden></div>
+
+<dialog id="refine-modal">
+  <h3 id="refine-modal-title" style="margin:0 0 .4rem">Refine with AI</h3>
+  <p class="muted" id="refine-modal-sub" style="font-size:12px; margin:0 0 .8rem">Provide optional instructions to guide the AI, or leave blank.</p>
+  <label class="field-lbl">Prompt / Instructions (optional)</label>
+  <textarea id="refine-prompt-input" rows="3" style="width:100%" placeholder="e.g. make it punchier, under 50 chars, add mystery..."></textarea>
+  <div style="display:flex; justify-content:flex-end; gap:.5rem; margin-top:.8rem">
+    <button type="button" class="btn" id="refine-cancel-btn">Cancel</button>
+    <button type="button" class="btn btn-primary" id="refine-submit-btn">Refine with AI</button>
+  </div>
+</dialog>
+
 <div id="toasts"></div>
 
 <script>
@@ -298,10 +554,11 @@ const $ = (sel, el = document) => el.querySelector(sel);
 const STAGES = ["fetch", "transcribe", "ideate", "voice", "plan", "render"];
 
 const api = async (method, path, body) => {
+  const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
   const r = await fetch(path, {
     method,
-    headers: body ? { "Content-Type": "application/json" } : {},
-    body: body ? JSON.stringify(body) : undefined,
+    headers: isFormData ? {} : (body ? { "Content-Type": "application/json" } : {}),
+    body: isFormData ? body : (body ? JSON.stringify(body) : undefined),
   });
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(data.error || r.statusText);
@@ -337,12 +594,9 @@ let lastLine = "";        // most recent non-empty log line, for the deck tail
 let ticker = null;
 let poller = null;        // fallback GET /api/jobs/current while a job is believed running
 let assetsOpen = false;   // keep the Assets panel open across re-renders
-let statusCache = {};     // platform -> cached GET /api/<platform>/status; reset on project switch / reconnect
+let ytStatusCache = null; // cached GET /api/youtube/status; reset on project switch / reconnect
+let ttStatusCache = null; // same, for GET /api/tiktok/status
 const creating = new Set();
-
-// both blocks always render; whichever lacks credentials shows "not configured"
-const PLATFORMS = ["youtube", "tiktok"];
-const PLATFORM_LABELS = { youtube: "YouTube", tiktok: "TikTok" };
 
 function jobHereRunning() {
   return !!(state && state.job && state.job.running && state.job.project === state.name);
@@ -379,27 +633,85 @@ async function loadList() {
     <div class="topbar"><span class="wordmark">shorts pipeline</span></div>
     <h1>Projects</h1>
     <form class="newproj" id="new">
+      <div class="newproj-tabs">
+        <button type="button" class="tab on" data-tab="youtube">YouTube URL</button>
+        <button type="button" class="tab" data-tab="text">Text instruction</button>
+        <button type="button" class="tab" data-tab="file">File upload</button>
+      </div>
       <label>Project name<input name="name" required></label>
-      <label>YouTube URL<input name="url" required></label>
+      <label>Target shorts count <span class="muted">(optional)</span><input type="number" name="count" min="1" step="1" placeholder="e.g. 6"></label>
+      <div class="newproj-pane" data-pane="youtube">
+        <label>YouTube URL<input name="url"></label>
+      </div>
+      <div class="newproj-pane" data-pane="text" hidden>
+        <label>Text instruction<textarea name="text" rows="4" placeholder="Instruction or idea text..."></textarea></label>
+      </div>
+      <div class="newproj-pane" data-pane="file" hidden>
+        <label>File upload<input type="file" name="file" accept=".txt,.md"></label>
+      </div>
       <button class="btn btn-run">Create project</button>
     </form>
     <div class="plist">${list}</div>`;
 
-  $("#new").onsubmit = async (e) => {
+  let activeTab = "youtube";
+  const form = $("#new");
+  const tabs = form.querySelectorAll(".newproj-tabs .tab");
+  const panes = form.querySelectorAll(".newproj-pane");
+  tabs.forEach((t) => {
+    t.onclick = () => {
+      activeTab = t.dataset.tab;
+      tabs.forEach((btn) => btn.classList.toggle("on", btn === t));
+      panes.forEach((p) => {
+        p.hidden = (p.dataset.pane !== activeTab);
+      });
+    };
+  });
+
+  form.onsubmit = async (e) => {
     e.preventDefault();
-    const f = e.target;
-    const slug = slugify(f.name.value);
+    const name = form.name.value.trim();
+    if (!name) {
+      alert("Project name is required");
+      return;
+    }
+    const countVal = form.count ? form.count.value.trim() : "";
+    const count = countVal ? parseInt(countVal, 10) : undefined;
+    if (countVal && (isNaN(count) || count < 1)) {
+      alert("Target shorts count must be a positive integer");
+      return;
+    }
+    const slug = slugify(name);
     try {
-      await api("POST", "/api/projects", { name: f.name.value, url: f.url.value });
-      creating.add(slug);
-      location.hash = "#/" + encodeURIComponent(slug);
+      if (activeTab === "youtube") {
+        const url = form.url.value.trim();
+        if (!url) throw new Error("YouTube URL is required");
+        await api("POST", "/api/projects", { name, url, ...(count ? { count } : {}) });
+        creating.add(slug);
+        location.hash = "#/" + encodeURIComponent(slug);
+      } else if (activeTab === "text") {
+        const text = form.text.value.trim();
+        if (!text) throw new Error("Text instruction is required");
+        await api("POST", "/api/projects", { name, text, ...(count ? { count } : {}) });
+        location.hash = "#/" + encodeURIComponent(slug);
+      } else if (activeTab === "file") {
+        const fileInput = form.file;
+        if (!fileInput.files || !fileInput.files[0]) throw new Error("Please select a file to upload");
+        const fd = new FormData();
+        fd.append("name", name);
+        fd.append("file", fileInput.files[0]);
+        if (count) fd.append("count", count);
+        await api("POST", "/api/projects", fd);
+        location.hash = "#/" + encodeURIComponent(slug);
+      }
     } catch (err) { alert(err.message); }
   };
 }
 
 /* ---------- one project ---------- */
 async function loadProject(name) {
-  statusCache = {};
+  ytStatusCache = null;
+  ttStatusCache = null;
+  cadDraft = null;
   try {
     state = await api("GET", `/api/projects/${encodeURIComponent(name)}`);
   } catch (err) {
@@ -431,8 +743,8 @@ function render() {
   const runningHere = jobHereRunning();
 
   // pick the next actionable stage; auto-arm it if the user hasn't chosen one
-  const runnable = (st) => st.stage !== "fetch" && st.status !== "blocked";
-  const next = s.stages.find((st) => st.stage !== "fetch" && (st.status === "ready" || st.status === "stale"));
+  const runnable = (st) => st.stage !== "fetch" && st.status !== "blocked" && st.status !== "skipped";
+  const next = s.stages.find((st) => st.stage !== "fetch" && st.status !== "skipped" && (st.status === "ready" || st.status === "stale"));
   if (!armed && next) armed = next.stage;
   const armedRow = s.stages.find((st) => st.stage === armed && runnable(st)) || null;
 
@@ -469,13 +781,9 @@ function render() {
       <div id="cats" class="muted">Open to load.</div>
     </details>
 
-    <div class="head"><b>Publish</b><span class="fill"></span></div>
-    <div id="pub">
-      <div class="cadence" id="cadence"></div>
-      ${PLATFORMS.map((p) =>
-        `<div class="pub-block" data-platform="${p}"><p class="muted">loading ${PLATFORM_LABELS[p]}…</p></div>`
-      ).join("")}
-    </div>`;
+    <div class="head"><b>Publish &amp; Schedule</b><span class="fill"></span></div>
+    <div id="pub">loading…</div>
+    <div id="pub-tiktok"></div>`;
 
   setBusy(runningHere || pending);
   syncMonitor(runningHere);
@@ -487,7 +795,7 @@ function render() {
 
 function segment(st, i, runningHere) {
   const isRun = runningHere && state.job.stage === st.stage;
-  const armable = st.stage !== "fetch" && st.status !== "blocked";
+  const armable = st.stage !== "fetch" && st.status !== "blocked" && st.status !== "skipped";
   const cls = ["seg", st.status];
   if (isRun) cls.push("running");
   else if (!runningHere && armed === st.stage && armable) cls.push("armed");
@@ -519,11 +827,15 @@ function deck(s, armedRow, runningHere) {
     const detail = st.status === "done"
       ? (st.detail || "Up to date. Run with force to rebuild it.")
       : (st.detail || "");
+    const countInput = st.stage === "ideate"
+      ? `<label style="display:inline-flex; align-items:center; gap:.3rem; font-size:12px; color:var(--ink-dim);">count <input type="number" id="armcount" min="1" step="1" style="width:3.5rem; padding:2px 4px; font:12px var(--mono);" value="${escapeHtml(state.settings && state.settings.count != null ? state.settings.count : "")}" placeholder="def"></label>`
+      : "";
     return `<div class="deck armed" aria-live="polite">
       <span class="d-stage">${st.stage}</span>
       <span class="d-status">${st.status}</span>
       <span class="d-detail">${escapeHtml(detail)}</span>
       <span class="spacer"></span>
+      ${countInput}
       <label><input type="checkbox" id="armforce"> force</label>
       <button class="btn btn-run" id="armrun">Run ${st.stage}</button>
     </div>`;
@@ -559,13 +871,14 @@ function ideaCard(idea) {
   return `<div class="card" data-slug="${escapeHtml(idea.slug)}">
     <div class="card-top">
       <input class="title-in" value="${escapeHtml(idea.title)}" aria-label="video title">
+      <button type="button" class="btn refine-btn" data-field="title" title="Refine title with AI">✨ Refine</button>
       <label class="approve"><input type="checkbox" class="approved" ${idea.approved ? "checked" : ""}> approved</label>
       <span class="frow">${fr("voice")}${fr("plan")}${fr("render")}</span>
     </div>
     ${audio}
-    <label class="field-lbl">description</label>
+    <div class="field-hdr"><label class="field-lbl">description</label><button type="button" class="btn refine-btn" data-field="description" title="Refine description with AI">✨ Refine</button></div>
     <textarea class="desc-in" rows="2">${escapeHtml(idea.description || "")}</textarea>
-    <label class="field-lbl">tags &nbsp;<span class="muted">comma-separated, for the YouTube upload</span></label>
+    <div class="field-hdr"><label class="field-lbl">tags &nbsp;<span class="muted">comma-separated, for the YouTube upload</span></label><button type="button" class="btn refine-btn" data-field="tags" title="Refine tags with AI">✨ Refine</button></div>
     <input class="tags-in" value="${escapeHtml(idea.tags || "")}" aria-label="youtube tags">
     <button class="btn save-idea">Save idea</button>
     ${tabs}
@@ -575,14 +888,18 @@ function ideaCard(idea) {
 }
 
 /* ---------- run controls ---------- */
-async function runStage(stage, force) {
+async function runStage(stage, force, count) {
   if (pending || jobHereRunning()) return;
   pending = true;
   startedAt = Date.now();
   lastLine = "";
   render();
   try {
-    await api("POST", `/api/projects/${encodeURIComponent(state.name)}/run/${stage}`, { force });
+    const payload = { force };
+    if (stage === "ideate" && count != null && !isNaN(count)) {
+      payload.count = count;
+    }
+    await api("POST", `/api/projects/${encodeURIComponent(state.name)}/run/${stage}`, payload);
   } catch (err) {
     pending = false;
     render();
@@ -596,7 +913,12 @@ function wire() {
     b.onclick = () => { armed = b.dataset.stage; render(); };
   });
   const armrun = $("#armrun");
-  if (armrun) armrun.onclick = () => runStage(armed, $("#armforce").checked);
+  if (armrun) armrun.onclick = () => {
+    const force = $("#armforce") ? $("#armforce").checked : false;
+    const countInput = $("#armcount");
+    const countVal = countInput && countInput.value.trim() ? parseInt(countInput.value.trim(), 10) : undefined;
+    runStage(armed, force, countVal);
+  };
   const stop = $("#stop");
   if (stop) stop.onclick = () => {
     stop.disabled = true;
@@ -623,6 +945,11 @@ function wire() {
     card.querySelectorAll(".tab").forEach((t) => t.onclick = () => {
       ideaView.set(slug, t.dataset.view);
       render();
+    });
+    card.querySelectorAll(".refine-btn").forEach((btn) => {
+      btn.onclick = () => {
+        openRefineModal(slug, btn.dataset.field, card);
+      };
     });
     $(".approved", card).onchange = async (e) => {
       const want = e.target.checked;
@@ -687,7 +1014,7 @@ async function loadCategories() {
   }).join("");
 }
 
-/* ---------- publish panel ---------- */
+/* ---------- publish & schedule deck ---------- */
 function toLocalInput(iso) {
   if (!iso) return "";
   const d = new Date(iso);
@@ -698,167 +1025,686 @@ function fromLocalInput(v) {
   return v ? new Date(v).toISOString().replace(".000Z", "Z") : null;
 }
 
-async function loadPublish() {
-  if (!$("#pub")) return;
-  // both blocks load in parallel; the cadence form is project-global, so it's
-  // rendered once from whichever queue answered first
-  const queues = await Promise.all(PLATFORMS.map((p) => loadPublishBlock(p)));
-  renderCadence(queues.find((q) => q) || null);
+function formatAirtime(isoStr) {
+  if (!isoStr) return { primary: "Unscheduled", sub: "Awaiting air slot or manual override" };
+  const d = new Date(isoStr);
+  const now = new Date();
+  const timeStr = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+  const isToday = d.toDateString() === now.toDateString();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const isTomorrow = d.toDateString() === tomorrow.toDateString();
+
+  if (isToday) {
+    return { primary: `Today at ${timeStr}`, sub: d.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" }) };
+  } else if (isTomorrow) {
+    return { primary: `Tomorrow at ${timeStr}`, sub: d.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" }) };
+  } else {
+    const dayName = d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+    return { primary: `${dayName} · ${timeStr}`, sub: d.toLocaleDateString([], { year: "numeric" }) };
+  }
 }
 
-async function loadPublishBlock(platform) {
-  const box = document.querySelector(`.pub-block[data-platform="${platform}"]`);
-  if (!box) return null;
-  const label = PLATFORM_LABELS[platform];
+let cadDraft = null;
+let cadSaved = null;
 
+function computeRhythm(draft) {
+  const times = draft.times || [];
+  const timesCount = times.length;
+  const activeDaysCount = draft.weekdays && draft.weekdays.length ? draft.weekdays.length : 7;
+  const weeklyVolume = timesCount * activeDaysCount;
+
+  let nextSlotStr = "No active slots";
+  let nextSlotRel = "";
+  if (timesCount > 0 && activeDaysCount > 0) {
+    const now = new Date();
+    const anchor = draft.start ? new Date(draft.start) : now;
+    const searchStart = anchor > now ? anchor : now;
+    const sortedTimes = [...times].sort();
+    const activeWd = new Set(draft.weekdays && draft.weekdays.length ? draft.weekdays : [1, 2, 3, 4, 5, 6, 7]);
+
+    for (let offset = 0; offset < 28; offset++) {
+      const day = new Date(searchStart);
+      day.setDate(day.getDate() + offset);
+      const isoWd = day.getDay() === 0 ? 7 : day.getDay();
+      if (!activeWd.has(isoWd)) continue;
+
+      for (const t of sortedTimes) {
+        const [h, m] = t.split(":").map(Number);
+        const slot = new Date(day.getFullYear(), day.getMonth(), day.getDate(), h, m, 0, 0);
+        if (slot > now && (!draft.start || slot >= new Date(draft.start))) {
+          const diffMs = slot.getTime() - now.getTime();
+          const diffHrs = Math.floor(diffMs / (1000 * 60 * 60));
+          const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+
+          const isToday = slot.toDateString() === now.toDateString();
+          const tomorrow = new Date(now);
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          const isTomorrow = slot.toDateString() === tomorrow.toDateString();
+          const timeFormatted = slot.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+
+          if (isToday) nextSlotStr = `Today, ${timeFormatted}`;
+          else if (isTomorrow) nextSlotStr = `Tomorrow, ${timeFormatted}`;
+          else nextSlotStr = `${slot.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}, ${timeFormatted}`;
+
+          if (diffHrs >= 24) {
+            const days = Math.floor(diffHrs / 24);
+            nextSlotRel = `(in ${days}d ${diffHrs % 24}h)`;
+          } else if (diffHrs > 0) {
+            nextSlotRel = `(in ${diffHrs}h ${diffMins}m)`;
+          } else {
+            nextSlotRel = `(in ${Math.max(1, diffMins)}m)`;
+          }
+          break;
+        }
+      }
+      if (nextSlotStr !== "No active slots") break;
+    }
+  }
+  return { timesCount, activeDaysCount, weeklyVolume, nextSlotStr, nextSlotRel };
+}
+
+function isCadDirty(draft, saved) {
+  if (!draft || !saved) return false;
+  const dStart = draft.start ? new Date(draft.start).toISOString().replace(".000Z", "Z") : null;
+  const sStart = saved.start ? new Date(saved.start).toISOString().replace(".000Z", "Z") : null;
+  if (dStart !== sStart) return true;
+  const dWd = [...(draft.weekdays || [1,2,3,4,5,6,7])].sort((a,b)=>a-b).join(",");
+  const sWd = [...(saved.weekdays || [1,2,3,4,5,6,7])].sort((a,b)=>a-b).join(",");
+  if (dWd !== sWd) return true;
+  const dTimes = [...(draft.times || [])].sort().join(",");
+  const sTimes = [...(saved.times || [])].sort().join(",");
+  return dTimes !== sTimes;
+}
+
+async function loadPublish() {
+  await Promise.all([loadYouTubePublish(), loadTikTokPublish()]);
+}
+
+async function loadYouTubePublish() {
+  const box = $("#pub");
+  if (!box) return;
   let status, queue;
   try {
-    if (!statusCache[platform]) statusCache[platform] = await api("GET", `/api/${platform}/status`);
-    status = statusCache[platform];
-    queue = await api("GET",
-      `/api/projects/${encodeURIComponent(state.name)}/publish?platform=${encodeURIComponent(platform)}`);
-  } catch (err) {
-    box.innerHTML = `<div class="pub-conn"><span class="pub-name">${label}</span>
-      <span class="err">${escapeHtml(err.message)}</span></div>`;
-    return null;
+    if (!ytStatusCache) ytStatusCache = await api("GET", "/api/youtube/status");
+    status = ytStatusCache;
+    queue = await api("GET", `/api/projects/${encodeURIComponent(state.name)}/publish`);
+  } catch (err) { box.textContent = err.message; return; }
+
+  const cad = queue.cadence || {};
+  cadSaved = {
+    start: cad.start || null,
+    weekdays: cad.weekdays ? [...cad.weekdays].sort((a, b) => a - b) : [1, 2, 3, 4, 5, 6, 7],
+    times: cad.times && cad.times.length ? [...cad.times].sort() : (cad.interval_hours ? ["10:00"] : ["10:00", "18:00"]),
+    interval_hours: cad.interval_hours || null,
+  };
+
+  if (!cadDraft) {
+    cadDraft = {
+      start: cadSaved.start,
+      weekdays: [...cadSaved.weekdays],
+      times: [...cadSaved.times],
+    };
   }
 
-  // no credentials configured at all: nothing here can work yet, so don't
-  // offer buttons that are guaranteed to fail
-  const unconfigured = !status.connected && status.error === "not configured";
-  const conn = status.connected
-    ? `<span class="ok">connected${status.channel ? " · " + escapeHtml(status.channel) : ""}</span>`
-    : `<span class="bad">${status.error === "token expired" ? "token expired" : unconfigured ? "not configured" : "not connected"}</span>`;
-  const pendingN = queue.items.filter(canUpload).length;
+  const isLegacyInterval = !cad.times && !!cad.interval_hours;
+  const dirty = isCadDirty(cadDraft, cadSaved);
+  const rhythm = computeRhythm(cadDraft);
+
+  let tzName = "";
+  try { tzName = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch {}
+
+  // YouTube connection status
+  const connDot = status.connected ? `<span class="status-dot ok"></span>` : `<span class="status-dot bad"></span>`;
+  const connText = status.connected
+    ? `<span>Connected to YouTube ${status.channel ? `<span class="channel-badge">${escapeHtml(status.channel)}</span>` : ""}</span>`
+    : `<span class="err">${escapeHtml(status.error === "token expired" ? "Token expired — reconnect" : status.error === "not configured" ? "YouTube API not configured" : "Not connected")}</span>`;
+
+  // Day pills
+  const dayNames = [
+    { id: 1, label: "Mon" }, { id: 2, label: "Tue" }, { id: 3, label: "Wed" },
+    { id: 4, label: "Thu" }, { id: 5, label: "Fri" }, { id: 6, label: "Sat" }, { id: 7, label: "Sun" },
+  ];
+  const activeWdSet = new Set(cadDraft.weekdays || [1, 2, 3, 4, 5, 6, 7]);
+  const dayPills = dayNames.map((d) =>
+    `<button type="button" class="day-pill ${activeWdSet.has(d.id) ? "active" : ""}" data-day="${d.id}" title="Toggle ${d.label}">${d.label}</button>`
+  ).join("");
+
+  // Time slot chips
+  const sortedDraftTimes = [...cadDraft.times].sort();
+  const timeChips = sortedDraftTimes.map((t, idx) => `
+    <span class="slot-chip" data-time="${escapeHtml(t)}">
+      <span class="slot-idx">#${idx + 1}</span>
+      <input type="time" class="cad-time-val" value="${escapeHtml(t)}" aria-label="Release time #${idx + 1}">
+      <button type="button" class="slot-del" data-time="${escapeHtml(t)}" title="Remove slot" aria-label="Remove slot ${escapeHtml(t)}">&times;</button>
+    </span>
+  `).join("");
+
+  // Quick presets
+  const standardPresets = [
+    { time: "09:00", label: "+ 09:00 Morning" },
+    { time: "13:00", label: "+ 13:00 Lunch" },
+    { time: "18:00", label: "+ 18:00 Peak" },
+    { time: "21:00", label: "+ 21:00 Night" },
+  ];
+  const presetsHtml = standardPresets.map((p) => {
+    const inUse = cadDraft.times.includes(p.time);
+    return `<button type="button" class="preset-pill ${inUse ? "in-use" : ""}" data-preset="${p.time}" ${inUse ? "disabled" : ""}>${p.label}</button>`;
+  }).join("");
+
+  // Legacy notice
+  const legacyHtml = isLegacyInterval ? `
+    <div class="legacy-banner">
+      <span>This project is set to fixed hourly intervals (every ${cad.interval_hours}h). Switch to scheduled daily time slots for consistent peak-hour publishing.</span>
+      <button type="button" class="btn btn-sm" id="cad-convert-legacy">Convert to daily slots</button>
+    </div>` : "";
+
+  // Rundown items
+  const pendingUploads = queue.items.filter(canUpload).length;
+  const itemsHtml = queue.items.length
+    ? queue.items.map((it, idx) => pubRow(it, idx)).join("")
+    : `<div class="rundown-empty">No approved ideas in the pipeline yet. Approve ideas in the Ideas section above to schedule them for broadcast.</div>`;
 
   box.innerHTML = `
-    <div class="pub-conn">
-      <span class="pub-name">${label}</span>${conn}
-      <button class="btn" id="connect-${platform}" ${unconfigured ? "disabled" : ""}>${
-        status.connected ? "Reconnect" : "Connect " + label}</button>
+    <div class="pub-status-bar">
+      <div class="pub-status-main">
+        ${connDot}
+        ${connText}
+      </div>
+      <button class="btn btn-sm" id="yt-connect">${status.connected ? "Reconnect" : "Connect YouTube"}</button>
     </div>
-    ${unconfigured
-      ? (platform === "tiktok"
-        ? `<p class="pub-note">Set <code>TIKTOK_CLIENT_KEY</code> and <code>TIKTOK_CLIENT_SECRET</code> in .env, then connect.</p>`
-        : `<p class="pub-note">Add <code>[${platform}]</code> credentials to config.toml, then connect.</p>`)
-      : ""}
-    ${queue.items.map((it) => pubRow(it, platform, unconfigured)).join("")
-      || `<p class="muted">No approved ideas.</p>`}
-    <button class="btn btn-run" id="pub-all-${platform}" ${pendingN && !unconfigured ? "" : "disabled"}>
-      Upload all pending${pendingN ? ` (${pendingN})` : ""}</button>`;
 
-  $(`#connect-${platform}`, box).onclick = () => {
-    statusCache[platform] = null;
-    api("POST", `/api/${platform}/auth`)
-      .then(() => toast(`${label} sign-in started — follow the monitor.`))
-      .catch((e) => toast(e.message, "err"));
+    <div class="cadence-console">
+      <div class="cadence-rhythm">
+        <div class="rhythm-metrics">
+          <span class="rhythm-metric"><b>${rhythm.timesCount}</b> daily slot${rhythm.timesCount === 1 ? "" : "s"}</span>
+          <span class="rhythm-sep">·</span>
+          <span class="rhythm-metric"><b>${rhythm.activeDaysCount}</b> broadcast day${rhythm.activeDaysCount === 1 ? "" : "s"}</span>
+          <span class="rhythm-sep">·</span>
+          <span class="rhythm-metric"><b>${rhythm.weeklyVolume}</b> shorts / week</span>
+        </div>
+        <div class="rhythm-next">
+          <span class="rhythm-next-lbl">Next slot:</span>
+          <b class="rhythm-next-val">${escapeHtml(rhythm.nextSlotStr)}</b>
+          <span class="rhythm-next-rel">${escapeHtml(rhythm.nextSlotRel)}</span>
+        </div>
+      </div>
+      ${legacyHtml}
+      <div class="cadence-body">
+        <div class="cadence-grid">
+          <div class="cad-panel">
+            <div class="cad-lbl-row">
+              <label class="cad-lbl" for="cad-start">First broadcast anchor</label>
+            </div>
+            <input type="datetime-local" class="cad-input" id="cad-start" value="${toLocalInput(cadDraft.start)}">
+            <span class="cad-hint">Timezone: ${escapeHtml(tzName || "Local")} · First slot occurs on or after this time</span>
+          </div>
+          <div class="cad-panel">
+            <div class="cad-lbl-row">
+              <label class="cad-lbl">Active broadcast days</label>
+              <div class="cad-shortcuts">
+                <button type="button" class="link-btn" id="cad-set-weekdays">Weekdays</button>
+                <button type="button" class="link-btn" id="cad-set-all">All 7 days</button>
+                <button type="button" class="link-btn" id="cad-set-weekends">Weekends</button>
+              </div>
+            </div>
+            <div class="day-matrix">${dayPills}</div>
+            <span class="cad-hint">${activeWdSet.size === 7 ? "Broadcasting every day" : `${activeWdSet.size} days active each week`}</span>
+          </div>
+        </div>
+
+        <div class="cad-slots-section">
+          <div class="cad-lbl-row">
+            <label class="cad-lbl">Daily release hours</label>
+            <span class="cad-hint">Assigned in sequential chronological order</span>
+          </div>
+          <div class="slot-chips-row">
+            ${timeChips}
+            <button type="button" class="btn btn-sm" id="cad-add-slot">+ Add slot</button>
+          </div>
+          <div class="slot-presets">
+            <span class="slot-presets-lbl">Quick add:</span>
+            ${presetsHtml}
+          </div>
+        </div>
+      </div>
+
+      <div class="cadence-footer">
+        <div class="cad-status ${dirty ? "dirty" : "synced"}">
+          <span class="status-dot ${dirty ? "bad" : "ok"}"></span>
+          <span>${dirty ? "Unsaved schedule changes" : "Schedule synced with manifest"}</span>
+        </div>
+        <div class="cad-actions">
+          ${dirty ? `<button type="button" class="btn btn-sm" id="cad-discard">Discard changes</button>` : ""}
+          <button type="button" class="btn btn-primary" id="cad-save">Save schedule</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="rundown-bar">
+      <span class="rundown-bar-sub">Queue automatically populates eligible slots. Manual overrides take immediate precedence.</span>
+      <button class="btn btn-run" id="pub-all" ${pendingUploads > 0 ? "" : "disabled"}>
+        Upload all pending (${pendingUploads})
+      </button>
+    </div>
+
+    <div class="rundown-table">
+      ${itemsHtml}
+    </div>`;
+
+  // Wire YouTube Reconnect
+  $("#yt-connect").onclick = () => {
+    api("POST", "/api/youtube/auth").catch((e) => toast(e.message, "err"));
+    ytStatusCache = null;
   };
 
-  $(`#pub-all-${platform}`, box).onclick = async () => {
-    const n = queue.items.filter(canUpload).length;
-    const who = label + (status.channel ? ` · ${status.channel}` : "");
-    const now = platform === "youtube" ? "" : " They post immediately.";
-    if (!confirm(`Upload ${n} short${n === 1 ? "" : "s"} to ${who}?${now}`)) return;
-    try { await api("POST", `/api/projects/${encodeURIComponent(state.name)}/publish`, { platform }); }
-    catch (err) { toast(err.message, "err"); }
-  };
-
-  // scoped to this block: both blocks carry rows with the same slugs
-  box.querySelectorAll(".prow").forEach((row) => {
-    const slug = row.dataset.slug;
-    const inp = $(".ov", row);
-    if (inp) inp.onchange = async () => {
-      try {
-        await api("PUT",
-          `/api/projects/${encodeURIComponent(state.name)}/ideas/${encodeURIComponent(slug)}/publish-at?platform=${encodeURIComponent(platform)}`,
-          { publish_at: fromLocalInput(inp.value) });
-        loadPublish();  // the override is project-global: reload every block
-      } catch (err) { toast(err.message, "err"); }
-    };
-    const up = $(".up-one", row);
-    if (up) up.onclick = async () => {
-      try {
-        await api("POST",
-          `/api/projects/${encodeURIComponent(state.name)}/ideas/${encodeURIComponent(slug)}/publish`,
-          { platform });
-      } catch (err) { toast(err.message, "err"); }
+  // Wire Day Matrix
+  box.querySelectorAll(".day-pill").forEach((pill) => {
+    pill.onclick = () => {
+      const day = +pill.dataset.day;
+      const cur = new Set(cadDraft.weekdays || [1, 2, 3, 4, 5, 6, 7]);
+      if (cur.has(day)) {
+        if (cur.size <= 1) {
+          toast("At least one broadcast day must be active", "err");
+          return;
+        }
+        cur.delete(day);
+      } else {
+        cur.add(day);
+      }
+      cadDraft.weekdays = [...cur].sort((a, b) => a - b);
+      loadPublish();
     };
   });
 
-  return queue;
-}
-
-function renderCadence(queue) {
-  const box = $("#cadence");
-  if (!box) return;
-  // every platform's queue fetch failed: we don't know the saved cadence, and an
-  // empty-but-live form would let Save write start=null, which the API reads as
-  // "clear the cadence" — wiping real data. Render nothing writable.
-  if (!queue) {
-    box.innerHTML = `<span class="muted">cadence unavailable</span>`;
-    return;
-  }
-  const cad = queue.cadence || {};
-  const wd = new Set(cad.weekdays || []);
-  const dayBoxes = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d, i) =>
-    `<label><input type="checkbox" class="wd-cb" value="${i + 1}" ${wd.has(i + 1) ? "checked" : ""}>${d}</label>`).join("");
-
-  box.innerHTML = `
-    <span class="muted">start</span>
-    <input type="datetime-local" id="cad-start" value="${toLocalInput(cad.start)}">
-    <span class="muted">every</span>
-    <input type="number" id="cad-int" min="1" value="${cad.interval_hours || 24}">
-    <span class="muted">hours</span>
-    <span class="wd">${dayBoxes}</span>
-    <button class="btn" id="cad-save">Save schedule</button>
-    <span class="muted cad-note">one schedule, shared by every platform</span>`;
-
-  $("#cad-save").onclick = async () => {
-    const start = fromLocalInput($("#cad-start").value);
-    const weekdays = [...box.querySelectorAll(".wd-cb:checked")].map((c) => +c.value);
-    try {
-      await api("PUT", `/api/projects/${encodeURIComponent(state.name)}/publish/cadence`,
-        { start, interval_hours: +$("#cad-int").value, weekdays: weekdays.length ? weekdays : null });
-      toast("Schedule saved");
-      loadPublish();
-    } catch (err) { toast(err.message, "err"); }
+  // Wire Day Shortcuts
+  const setWeekdays = $("#cad-set-weekdays");
+  if (setWeekdays) setWeekdays.onclick = () => {
+    cadDraft.weekdays = [1, 2, 3, 4, 5];
+    loadPublish();
   };
+  const setAllDays = $("#cad-set-all");
+  if (setAllDays) setAllDays.onclick = () => {
+    cadDraft.weekdays = [1, 2, 3, 4, 5, 6, 7];
+    loadPublish();
+  };
+  const setWeekends = $("#cad-set-weekends");
+  if (setWeekends) setWeekends.onclick = () => {
+    cadDraft.weekdays = [6, 7];
+    loadPublish();
+  };
+
+  // Wire Anchor Date Change
+  const startInput = $("#cad-start");
+  if (startInput) {
+    startInput.onchange = () => {
+      cadDraft.start = fromLocalInput(startInput.value);
+      loadPublish();
+    };
+  }
+
+  // Wire Time Slot Inputs
+  box.querySelectorAll(".slot-chip").forEach((chip) => {
+    const oldTime = chip.dataset.time;
+    const inp = chip.querySelector(".cad-time-val");
+    if (inp) {
+      inp.onchange = () => {
+        const val = inp.value.trim();
+        if (!val || !/^([01]\d|2[0-3]):[0-5]\d$/.test(val)) {
+          toast("Please enter a valid HH:MM time", "err");
+          inp.value = oldTime;
+          return;
+        }
+        const idx = cadDraft.times.indexOf(oldTime);
+        if (idx !== -1) cadDraft.times[idx] = val;
+        cadDraft.times = [...new Set(cadDraft.times)].sort();
+        loadPublish();
+      };
+    }
+    const delBtn = chip.querySelector(".slot-del");
+    if (delBtn) {
+      delBtn.onclick = () => {
+        if (cadDraft.times.length <= 1) {
+          toast("At least one daily time slot is required", "err");
+          return;
+        }
+        cadDraft.times = cadDraft.times.filter((t) => t !== oldTime);
+        loadPublish();
+      };
+    }
+  });
+
+  // Wire Add Slot
+  const addSlotBtn = $("#cad-add-slot");
+  if (addSlotBtn) {
+    addSlotBtn.onclick = () => {
+      let nextH = 12;
+      if (cadDraft.times.length) {
+        const last = cadDraft.times[cadDraft.times.length - 1];
+        const [h] = last.split(":").map(Number);
+        nextH = (h + 3) % 24;
+      }
+      let candidate = `${String(nextH).padStart(2, "0")}:00`;
+      let attempt = 0;
+      while (cadDraft.times.includes(candidate) && attempt < 24) {
+        nextH = (nextH + 1) % 24;
+        candidate = `${String(nextH).padStart(2, "0")}:00`;
+        attempt++;
+      }
+      cadDraft.times.push(candidate);
+      cadDraft.times = [...new Set(cadDraft.times)].sort();
+      loadPublish();
+    };
+  }
+
+  // Wire Quick Presets
+  box.querySelectorAll(".preset-pill").forEach((btn) => {
+    btn.onclick = () => {
+      const presetTime = btn.dataset.preset;
+      if (!presetTime || cadDraft.times.includes(presetTime)) return;
+      cadDraft.times.push(presetTime);
+      cadDraft.times = [...new Set(cadDraft.times)].sort();
+      loadPublish();
+    };
+  });
+
+  // Wire Legacy Conversion
+  const convertLegacy = $("#cad-convert-legacy");
+  if (convertLegacy) {
+    convertLegacy.onclick = () => {
+      cadDraft.times = ["10:00", "18:00"];
+      loadPublish();
+    };
+  }
+
+  // Wire Discard Changes
+  const discardBtn = $("#cad-discard");
+  if (discardBtn) {
+    discardBtn.onclick = () => {
+      cadDraft = {
+        start: cadSaved.start,
+        weekdays: [...cadSaved.weekdays],
+        times: [...cadSaved.times],
+      };
+      loadPublish();
+      toast("Draft changes discarded");
+    };
+  }
+
+  // Wire Save Schedule
+  const saveBtn = $("#cad-save");
+  if (saveBtn) {
+    saveBtn.onclick = async () => {
+      if (!cadDraft.times.length) {
+        toast("At least one time slot is required", "err");
+        return;
+      }
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Saving...";
+      try {
+        await api("PUT", `/api/projects/${encodeURIComponent(state.name)}/publish/cadence`, {
+          start: cadDraft.start,
+          times: cadDraft.times,
+          weekdays: cadDraft.weekdays.length ? cadDraft.weekdays : null,
+        });
+        cadDraft = null;
+        toast("Schedule saved");
+        await loadPublish();
+      } catch (err) {
+        toast(err.message, "err");
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Save schedule";
+      }
+    };
+  }
+
+  // Wire Batch Upload
+  const pubAllBtn = $("#pub-all");
+  if (pubAllBtn) {
+    pubAllBtn.onclick = async () => {
+      const n = pendingUploads;
+      if (!confirm(`Upload ${n} short${n === 1 ? "" : "s"} to ${status.channel || "YouTube"}?`)) return;
+      pubAllBtn.disabled = true;
+      try {
+        await api("POST", `/api/projects/${encodeURIComponent(state.name)}/publish`);
+        toast(`Uploading ${n} short${n === 1 ? "" : "s"}…`);
+        await loadPublish();
+      } catch (err) {
+        toast(err.message, "err");
+        pubAllBtn.disabled = false;
+      }
+    };
+  }
+
+  // Wire Rundown Items
+  box.querySelectorAll(".rundown-row").forEach((row) => {
+    const slug = row.dataset.slug;
+
+    const inp = row.querySelector(".ov");
+    if (inp) {
+      inp.onchange = async () => {
+        try {
+          await api("PUT", `/api/projects/${encodeURIComponent(state.name)}/ideas/${encodeURIComponent(slug)}/publish-at`, {
+            publish_at: fromLocalInput(inp.value),
+          });
+          toast("Override date updated");
+          await loadPublish();
+        } catch (err) {
+          toast(err.message, "err");
+        }
+      };
+    }
+
+    const revertBtn = row.querySelector(".btn-revert");
+    if (revertBtn) {
+      revertBtn.onclick = async () => {
+        try {
+          await api("PUT", `/api/projects/${encodeURIComponent(state.name)}/ideas/${encodeURIComponent(slug)}/publish-at`, {
+            publish_at: null,
+          });
+          toast("Restored to automated cadence slot");
+          await loadPublish();
+        } catch (err) {
+          toast(err.message, "err");
+        }
+      };
+    }
+
+    const upBtn = row.querySelector(".btn-up");
+    if (upBtn) {
+      upBtn.onclick = async () => {
+        upBtn.disabled = true;
+        upBtn.textContent = "Uploading…";
+        try {
+          await api("POST", `/api/projects/${encodeURIComponent(state.name)}/ideas/${encodeURIComponent(slug)}/publish`);
+          toast("Uploaded successfully");
+          await loadPublish();
+        } catch (err) {
+          toast(err.message, "err");
+          upBtn.disabled = false;
+          upBtn.textContent = "Upload";
+        }
+      };
+    }
+  });
 }
 
 function canUpload(it) {
   return it.render === "fresh" && !it.platform;
 }
 
-function pubRow(it, platform, unconfigured) {
-  const done = it.platform;
-  let chip;
-  if (done && platform === "youtube" && done.video_id) {
-    chip = `<a class="chip up" href="https://www.youtube.com/watch?v=${encodeURIComponent(done.video_id)}">uploaded ↗</a>`;
-  } else if (done) {
-    // TikTok's API hands back no public share URL — a plain chip, id as tooltip
-    const ref = done.publish_id || done.video_id || done.uploaded_at || "";
-    chip = `<span class="chip up"${ref ? ` title="${escapeHtml(ref)}"` : ""}>uploaded</span>`;
-  } else if (it.render === "missing") {
-    chip = `<span class="chip bad">not rendered</span>`;
+function pubRow(it, idx) {
+  let renderChip;
+  if (it.platform) {
+    renderChip = `<span class="rend-chip fresh">✓ Uploaded</span>`;
+  } else if (it.render === "fresh") {
+    renderChip = `<span class="rend-chip fresh">● Fresh render</span>`;
   } else if (it.render === "stale") {
-    chip = `<span class="chip bad">stale render</span>`;
-  } else if (it.publish_at) {
-    const when = escapeHtml(toLocalInput(it.publish_at).replace("T", " "));
-    // "planned" on platforms that can't schedule: the slot is ours, not theirs
-    chip = platform === "youtube"
-      ? `<span class="chip sched">scheduled ${when}</span>`
-      : `<span class="chip sched" title="${PLATFORM_LABELS[platform] || platform} posts as soon as you upload">planned ${when}</span>`;
+    renderChip = `<span class="rend-chip stale">◐ Stale render</span>`;
   } else {
-    chip = `<span class="chip">draft</span>`;
+    renderChip = `<span class="rend-chip missing">○ Needs render</span>`;
   }
+
+  const isOverride = !!it.publish_at_override;
+  const isScheduled = !!it.publish_at;
+  const airtime = formatAirtime(it.publish_at);
   const ovVal = toLocalInput(it.publish_at_override);
-  const hint = !it.publish_at_override && it.publish_at ? ` title="cadence: ${escapeHtml(it.publish_at)}"` : "";
-  return `<div class="prow" data-slug="${escapeHtml(it.slug)}">
-    <span class="pt">${escapeHtml(it.title)}</span>
-    ${chip}
-    <input type="datetime-local" class="ov" value="${ovVal}"${hint}>
-    <button class="btn up-one" ${canUpload(it) && !unconfigured ? "" : "disabled"}>Upload</button>
-  </div>`;
+  const padIdx = String(idx + 1).padStart(2, "0");
+
+  let actionEl;
+  if (it.platform) {
+    const ytUrl = it.platform.url || `https://www.youtube.com/watch?v=${encodeURIComponent(it.platform.video_id)}`;
+    actionEl = `<a class="btn-up-link" href="${escapeHtml(ytUrl)}" target="_blank" rel="noopener">YouTube ↗</a>`;
+  } else {
+    const uploadable = canUpload(it);
+    actionEl = `<button class="btn btn-sm btn-up ${uploadable ? "btn-run" : ""}" ${uploadable ? "" : "disabled"}>Upload</button>`;
+  }
+
+  const sourceTag = isOverride
+    ? `<span class="airtime-source override" title="Manual override date set for this video">Override</span>`
+    : (isScheduled
+      ? `<span class="airtime-source cadence" title="Assigned by automated cadence rhythm">Cadence</span>`
+      : `<span class="airtime-source draft">Draft</span>`);
+
+  return `
+    <div class="rundown-row" data-slug="${escapeHtml(it.slug)}">
+      <span class="rundown-seq">#${padIdx}</span>
+      <div class="rundown-title-wrap">
+        <span class="rundown-title" title="${escapeHtml(it.title)}">${escapeHtml(it.title)}</span>
+        <span class="rundown-slug">${escapeHtml(it.slug)}</span>
+      </div>
+      <div class="rundown-status">
+        ${renderChip}
+      </div>
+      <div class="rundown-airtime">
+        <div class="airtime-slot">
+          <span class="airtime-dt">${escapeHtml(airtime.primary)}</span>
+          ${sourceTag}
+        </div>
+        <div class="airtime-editor">
+          <input type="datetime-local" class="ov" value="${ovVal}" title="${isOverride ? "Custom airtime override" : "Click to set custom airtime"}">
+          ${isOverride ? `<button type="button" class="btn-revert" title="Clear override and follow cadence slot">↺ Cadence</button>` : ""}
+        </div>
+      </div>
+      <div class="rundown-action">
+        ${actionEl}
+      </div>
+    </div>`;
+}
+
+/* ---------- TikTok: a second block under the YouTube deck ----------
+   TikTok has no scheduling (an upload posts immediately), so it gets no cadence
+   or airtime editor; the YouTube cadence above doesn't apply to it. */
+async function loadTikTokPublish() {
+  const box = $("#pub-tiktok");
+  if (!box) return;
+  const project = state.name;
+  let status, queue;
+  try {
+    if (!ttStatusCache) ttStatusCache = await api("GET", "/api/tiktok/status");
+    status = ttStatusCache;
+    queue = await api("GET", `/api/projects/${encodeURIComponent(project)}/publish?platform=tiktok`);
+  } catch (err) {
+    if (state.name !== project) return;
+    box.innerHTML = `<div class="pub-status-bar"><div class="pub-status-main">
+      <span class="status-dot bad"></span><span class="err">TikTok: ${escapeHtml(err.message)}</span></div></div>`;
+    return;
+  }
+  if (state.name !== project) return;  // switched projects while the fetches were in flight
+
+  // no credentials at all: nothing here can work yet, so offer no buttons that must fail
+  const unconfigured = !status.connected && status.error === "not configured";
+  const connDot = `<span class="status-dot ${status.connected ? "ok" : "bad"}"></span>`;
+  const connText = status.connected
+    ? `<span>Connected to TikTok ${status.channel ? `<span class="channel-badge">${escapeHtml(status.channel)}</span>` : ""}</span>`
+    : `<span class="err">${status.error === "token expired" ? "TikTok token expired — reconnect" : unconfigured ? "TikTok not configured" : "TikTok not connected"}</span>`;
+  const pendingUploads = queue.items.filter(canUpload).length;
+  const itemsHtml = queue.items.length
+    ? queue.items.map((it, idx) => tiktokRow(it, idx, unconfigured)).join("")
+    : `<div class="rundown-empty">No approved ideas in the pipeline yet.</div>`;
+
+  box.innerHTML = `
+    <div class="pub-status-bar">
+      <div class="pub-status-main">${connDot}${connText}</div>
+      <button class="btn btn-sm" id="tt-connect" ${unconfigured ? "disabled" : ""}>${status.connected ? "Reconnect" : "Connect TikTok"}</button>
+    </div>
+    ${unconfigured ? `<p class="pub-note">Set <code>TIKTOK_CLIENT_KEY</code> and <code>TIKTOK_CLIENT_SECRET</code> in .env, then connect.</p>` : ""}
+    <div class="rundown-bar">
+      <span class="rundown-bar-sub">TikTok posts as soon as you upload — it has no schedule of its own.</span>
+      <button class="btn btn-run" id="tt-pub-all" ${pendingUploads > 0 && !unconfigured ? "" : "disabled"}>
+        Upload all pending (${pendingUploads})
+      </button>
+    </div>
+    <div class="rundown-table">${itemsHtml}</div>`;
+
+  $("#tt-connect", box).onclick = () => {
+    ttStatusCache = null;
+    api("POST", "/api/tiktok/auth")
+      .then(() => toast("TikTok sign-in started — follow the monitor."))
+      .catch((e) => toast(e.message, "err"));
+  };
+
+  const pubAll = $("#tt-pub-all", box);
+  pubAll.onclick = async () => {
+    const n = pendingUploads;
+    const who = status.channel ? ` · ${status.channel}` : "";
+    if (!confirm(`Upload ${n} short${n === 1 ? "" : "s"} to TikTok${who}? They post immediately.`)) return;
+    pubAll.disabled = true;
+    try {
+      await api("POST", `/api/projects/${encodeURIComponent(project)}/publish`, { platform: "tiktok" });
+      toast(`Uploading ${n} short${n === 1 ? "" : "s"} to TikTok…`);
+    } catch (err) {
+      toast(err.message, "err");
+      pubAll.disabled = false;
+    }
+  };
+
+  // scoped to this block: the YouTube deck has rows for the same slugs
+  box.querySelectorAll(".rundown-row").forEach((row) => {
+    const up = row.querySelector(".btn-up");
+    if (!up) return;
+    up.onclick = async () => {
+      up.disabled = true;
+      up.textContent = "Uploading…";
+      try {
+        await api("POST",
+          `/api/projects/${encodeURIComponent(project)}/ideas/${encodeURIComponent(row.dataset.slug)}/publish`,
+          { platform: "tiktok" });
+        toast("Uploading to TikTok…");
+      } catch (err) {
+        toast(err.message, "err");
+        up.disabled = false;
+        up.textContent = "Upload";
+      }
+    };
+  });
+}
+
+function tiktokRow(it, idx, unconfigured) {
+  const padIdx = String(idx + 1).padStart(2, "0");
+  let chip;
+  if (it.platform) chip = `<span class="rend-chip fresh" title="${escapeHtml(it.platform.publish_id || it.platform.uploaded_at || "")}">✓ Uploaded</span>`;
+  else if (it.render === "fresh") chip = `<span class="rend-chip fresh">● Fresh render</span>`;
+  else if (it.render === "stale") chip = `<span class="rend-chip stale">◐ Stale render</span>`;
+  else chip = `<span class="rend-chip missing">○ Needs render</span>`;
+
+  // TikTok's API hands back no public share URL, so an uploaded row has no link
+  const uploadable = canUpload(it) && !unconfigured;
+  const action = it.platform
+    ? `<span class="airtime-source cadence">Posted</span>`
+    : `<button class="btn btn-sm btn-up ${uploadable ? "btn-run" : ""}" ${uploadable ? "" : "disabled"}>Upload</button>`;
+
+  return `
+    <div class="rundown-row" data-slug="${escapeHtml(it.slug)}">
+      <span class="rundown-seq">#${padIdx}</span>
+      <div class="rundown-title-wrap">
+        <span class="rundown-title" title="${escapeHtml(it.title)}">${escapeHtml(it.title)}</span>
+        <span class="rundown-slug">${escapeHtml(it.slug)}</span>
+      </div>
+      <div class="rundown-status">${chip}</div>
+      <div class="rundown-airtime"><span class="airtime-dt">Posts on upload</span></div>
+      <div class="rundown-action">${action}</div>
+    </div>`;
 }
 
 /* ---------- poll fallback: catch a job that ended while SSE was reconnecting ---------- */
@@ -958,6 +1804,106 @@ es.onerror = () => {
   log.scrollTop = log.scrollHeight;
 };
 
+/* ---------- refine modal ---------- */
+let activeRefine = null; // { slug, field, card }
+
+function openRefineModal(slug, field, card) {
+  activeRefine = { slug, field, card };
+  const modal = $("#refine-modal");
+  const titleEl = $("#refine-modal-title");
+  const promptInput = $("#refine-prompt-input");
+  if (titleEl) {
+    titleEl.textContent = `Refine ${field.charAt(0).toUpperCase() + field.slice(1)} with AI`;
+  }
+  if (promptInput) {
+    promptInput.value = "";
+  }
+  if (modal && modal.showModal) {
+    modal.showModal();
+    if (promptInput) promptInput.focus();
+  }
+}
+
+function wireRefineModal() {
+  const modal = $("#refine-modal");
+  const cancelBtn = $("#refine-cancel-btn");
+  const submitBtn = $("#refine-submit-btn");
+  const promptInput = $("#refine-prompt-input");
+
+  if (cancelBtn) {
+    cancelBtn.onclick = () => {
+      if (modal && modal.close) modal.close();
+    };
+  }
+
+  if (modal) {
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal && modal.close) modal.close();
+    });
+  }
+
+  if (promptInput && submitBtn) {
+    promptInput.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        submitBtn.click();
+      }
+    });
+  }
+
+  if (submitBtn) {
+    submitBtn.onclick = async () => {
+      if (!activeRefine || !state) return;
+      const { slug, field, card } = activeRefine;
+      const promptVal = promptInput ? promptInput.value.trim() : "";
+
+      submitBtn.disabled = true;
+      if (cancelBtn) cancelBtn.disabled = true;
+      submitBtn.textContent = "Refining...";
+
+      try {
+        const current_title = $(".title-in", card) ? $(".title-in", card).value : "";
+        const current_description = $(".desc-in", card) ? $(".desc-in", card).value : "";
+        const current_tags = $(".tags-in", card) ? $(".tags-in", card).value : "";
+
+        const res = await api(
+          "POST",
+          `/api/projects/${encodeURIComponent(state.name)}/ideas/${encodeURIComponent(slug)}/refine`,
+          {
+            field,
+            prompt: promptVal,
+            current_title,
+            current_description,
+            current_tags,
+          }
+        );
+
+        if (field === "title") {
+          const el = $(".title-in", card);
+          if (el) el.value = res.result;
+        } else if (field === "description") {
+          const el = $(".desc-in", card);
+          if (el) el.value = res.result;
+        } else if (field === "tags") {
+          const el = $(".tags-in", card);
+          if (el) el.value = res.result;
+        }
+
+        if (modal && modal.close) modal.close();
+        const cap = field.charAt(0).toUpperCase() + field.slice(1);
+        toast(`${cap} refined with AI`);
+      } catch (err) {
+        toast(err.message, "err");
+      } finally {
+        submitBtn.disabled = false;
+        if (cancelBtn) cancelBtn.disabled = false;
+        submitBtn.textContent = "Refine with AI";
+      }
+    };
+  }
+}
+
+wireRefineModal();
 window.addEventListener("hashchange", route);
 route();
 </script>
