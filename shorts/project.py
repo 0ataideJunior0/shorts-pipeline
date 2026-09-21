@@ -5,7 +5,6 @@ import json
 import os
 import re
 import threading
-import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -197,16 +196,7 @@ class Manifest:
                 json.dumps(self._to_dict(), indent=2, ensure_ascii=False) + "\n",
                 encoding="utf-8",
             )
-            # POSIX rename is atomic; on Windows replacing a file another thread is
-            # replacing at that instant raises PermissionError, which clears at once
-            for attempt in range(10):
-                try:
-                    os.replace(tmp, path)
-                    break
-                except PermissionError:
-                    if os.name != "nt" or attempt == 9:
-                        raise
-                    time.sleep(0.005 * (attempt + 1))
+            os.replace(tmp, path)
         except BaseException:
             tmp.unlink(missing_ok=True)
             raise
