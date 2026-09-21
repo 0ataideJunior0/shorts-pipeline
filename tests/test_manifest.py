@@ -75,3 +75,27 @@ def test_publish_absent_loads_empty(tmp_path):
     path = tmp_path / "manifest.json"
     path.write_text('{"name": "demo"}')
     assert Manifest.load(path).get_publish() == {}
+
+
+# accents + an em dash: not representable the same way in cp1252 as in UTF-8
+ACCENTED = "incríveis — ação"
+
+
+def test_save_writes_utf8_regardless_of_locale(tmp_path):
+    # ensure_ascii=False emits raw accents; the platform default encoding
+    # (cp1252 on Windows) must not decide how they hit the disk.
+    m = Manifest.new("demo")
+    m.source = {"title": ACCENTED}
+    path = tmp_path / "manifest.json"
+    m.save(path)
+
+    assert ACCENTED in path.read_bytes().decode("utf-8")
+
+
+def test_load_reads_utf8_regardless_of_locale(tmp_path):
+    path = tmp_path / "manifest.json"
+    path.write_bytes(
+        ('{"name": "demo", "source": {"title": "%s"}}' % ACCENTED).encode("utf-8")
+    )
+
+    assert Manifest.load(path).source["title"] == ACCENTED

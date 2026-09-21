@@ -15,7 +15,7 @@ python -m shorts transcribe X           # ffmpeg + OpenAI Whisper -> transcript
 #   optional: edit ideas/prompt.json to steer idea generation (pt-BR brief by default)
 python -m shorts ideate X               # prompt.json + transcript -> ideas/NN-slug.md (each with "- [ ] Approved")
 #   review ideas/*.md, tick "- [x] Approved", edit narration if needed
-python -m shorts voice X                # Gemini TTS -> voice/NN-slug.mp3 for approved ideas
+python -m shorts voice X                # VoiceStudio TTS (cloned voice) -> voice/NN-slug.mp3 for approved ideas
 python -m shorts plan X                 # ai-vedit plan -> renders/NN-slug.plan.json
 #   review / edit renders/*.plan.json before rendering
 python -m shorts render X               # ai-vedit render (from the plan) -> renders/NN-slug.mp4
@@ -195,7 +195,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp config.example.toml config.toml   # then edit assets_dir etc.
-cp .env.example .env                 # then fill in OPENAI_API_KEY and GEMINI_API_KEY
+cp .env.example .env                 # then fill in OPENAI_API_KEY (TikTok keys optional)
 ```
 
 Requires `ffmpeg` and `ai-vedit` on `PATH`. `config.toml` and `.env` are read
@@ -212,9 +212,9 @@ python -m pytest
 ### TODO — expand test coverage
 
 - [ ] Stage-level tests for `fetch` / `transcribe` / `ideate` / `voice` /
-      `render` with the OpenAI/Gemini clients and `subprocess` (yt-dlp, ffmpeg,
+      `render` with the OpenAI/VoiceStudio clients and `subprocess` (yt-dlp, ffmpeg,
       ai-vedit) mocked — assert the files written and the manifest transitions.
 - [ ] End-to-end smoke test behind a `--runslow` marker: a ~20s clip through
-      all five stages against the real OpenAI/Gemini APIs and `ai-vedit`.
+      all five stages against the real OpenAI API, VoiceStudio and `ai-vedit`.
 - [ ] Browser/end-to-end test of the web UI (`shorts serve`): drive a project
       through the stages against a stubbed job runner.

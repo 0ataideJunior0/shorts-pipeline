@@ -162,7 +162,7 @@ class Manifest:
 
     @classmethod
     def load(cls, path: Path) -> "Manifest":
-        data = json.loads(Path(path).read_text())
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
         return cls(
             name=data["name"],
             source=data.get("source", {}),
@@ -184,7 +184,8 @@ class Manifest:
         path = Path(path)
         tmp = path.with_name(path.name + ".tmp")
         tmp.write_text(
-            json.dumps(self._to_dict(), indent=2, ensure_ascii=False) + "\n"
+            json.dumps(self._to_dict(), indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
         )
         os.replace(tmp, path)
 
