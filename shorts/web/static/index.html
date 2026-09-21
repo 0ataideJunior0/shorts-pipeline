@@ -101,6 +101,8 @@
   .seg.stale { background:var(--run-tint); }
   .seg.stale .stt { color:var(--run); }
   .seg.blocked { background:var(--panel); opacity:.5; }
+  .seg.skipped { background:var(--panel); opacity:.6; }
+  .seg.skipped .stt { color:var(--ink-dim); font-style:italic; }
   .seg.armed:not(.running) { box-shadow: inset 0 0 0 2px var(--sel); }
   .seg.running {
     background:var(--run-tint); color:var(--ink);
@@ -178,8 +180,15 @@
 
   /* ---- projects list ---- */
   .newproj { display:flex; flex-direction:column; gap:.55rem; max-width:26rem; margin:1rem 0 1.6rem; }
+  .newproj-tabs { display:flex; gap:0; margin-bottom:.75rem; border-bottom:1px solid var(--line); }
+  .newproj-pane { display:flex; flex-direction:column; gap:.55rem; }
   .newproj label { font-size:12.5px; color:var(--ink-dim); }
-  .newproj label input { display:block; width:100%; margin-top:.2rem; }
+  .newproj label input, .newproj label textarea { display:block; width:100%; margin-top:.2rem; }
+  .newproj textarea { font:12.5px/1.5 var(--sans); }
+  input[type=file] {
+    background:var(--panel-2); color:var(--ink); border:1px solid var(--line);
+    border-radius:6px; padding:6px 9px; font:13px var(--sans);
+  }
   .plist a.p-row {
     display:flex; align-items:center; gap:.8rem; padding:.6rem .1rem;
     border-bottom:1px solid var(--line); color:var(--ink);
@@ -192,6 +201,7 @@
   .mini i.done { background:var(--ok); }
   .mini i.stale { background:var(--run); }
   .mini i.ready { background:var(--sel); }
+  .mini i.skipped { background:var(--line); opacity:.4; }
 
   /* ---- monitor: persists across re-renders; pins to the foot only while a stage runs ---- */
   #monitor {
@@ -329,10 +339,11 @@ const $ = (sel, el = document) => el.querySelector(sel);
 const STAGES = ["fetch", "transcribe", "ideate", "voice", "plan", "render"];
 
 const api = async (method, path, body) => {
+  const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
   const r = await fetch(path, {
     method,
-    headers: body ? { "Content-Type": "application/json" } : {},
-    body: body ? JSON.stringify(body) : undefined,
+    headers: isFormData ? {} : (body ? { "Content-Type": "application/json" } : {}),
+    body: isFormData ? body : (body ? JSON.stringify(body) : undefined),
   });
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(data.error || r.statusText);
@@ -406,20 +417,68 @@ async function loadList() {
     <div class="topbar"><span class="wordmark">shorts pipeline</span></div>
     <h1>Projects</h1>
     <form class="newproj" id="new">
+      <div class="newproj-tabs">
+        <button type="button" class="tab on" data-tab="youtube">YouTube URL</button>
+        <button type="button" class="tab" data-tab="text">Text instruction</button>
+        <button type="button" class="tab" data-tab="file">File upload</button>
+      </div>
       <label>Project name<input name="name" required></label>
-      <label>YouTube URL<input name="url" required></label>
+      <div class="newproj-pane" data-pane="youtube">
+        <label>YouTube URL<input name="url"></label>
+      </div>
+      <div class="newproj-pane" data-pane="text" hidden>
+        <label>Text instruction<textarea name="text" rows="4" placeholder="Instruction or idea text..."></textarea></label>
+      </div>
+      <div class="newproj-pane" data-pane="file" hidden>
+        <label>File upload<input type="file" name="file" accept=".txt,.md"></label>
+      </div>
       <button class="btn btn-run">Create project</button>
     </form>
     <div class="plist">${list}</div>`;
 
-  $("#new").onsubmit = async (e) => {
+  let activeTab = "youtube";
+  const form = $("#new");
+  const tabs = form.querySelectorAll(".newproj-tabs .tab");
+  const panes = form.querySelectorAll(".newproj-pane");
+  tabs.forEach((t) => {
+    t.onclick = () => {
+      activeTab = t.dataset.tab;
+      tabs.forEach((btn) => btn.classList.toggle("on", btn === t));
+      panes.forEach((p) => {
+        p.hidden = (p.dataset.pane !== activeTab);
+      });
+    };
+  });
+
+  form.onsubmit = async (e) => {
     e.preventDefault();
-    const f = e.target;
-    const slug = slugify(f.name.value);
+    const name = form.name.value.trim();
+    if (!name) {
+      alert("Project name is required");
+      return;
+    }
+    const slug = slugify(name);
     try {
-      await api("POST", "/api/projects", { name: f.name.value, url: f.url.value });
-      creating.add(slug);
-      location.hash = "#/" + encodeURIComponent(slug);
+      if (activeTab === "youtube") {
+        const url = form.url.value.trim();
+        if (!url) throw new Error("YouTube URL is required");
+        await api("POST", "/api/projects", { name, url });
+        creating.add(slug);
+        location.hash = "#/" + encodeURIComponent(slug);
+      } else if (activeTab === "text") {
+        const text = form.text.value.trim();
+        if (!text) throw new Error("Text instruction is required");
+        await api("POST", "/api/projects", { name, text });
+        location.hash = "#/" + encodeURIComponent(slug);
+      } else if (activeTab === "file") {
+        const fileInput = form.file;
+        if (!fileInput.files || !fileInput.files[0]) throw new Error("Please select a file to upload");
+        const fd = new FormData();
+        fd.append("name", name);
+        fd.append("file", fileInput.files[0]);
+        await api("POST", "/api/projects", fd);
+        location.hash = "#/" + encodeURIComponent(slug);
+      }
     } catch (err) { alert(err.message); }
   };
 }
@@ -458,8 +517,8 @@ function render() {
   const runningHere = jobHereRunning();
 
   // pick the next actionable stage; auto-arm it if the user hasn't chosen one
-  const runnable = (st) => st.stage !== "fetch" && st.status !== "blocked";
-  const next = s.stages.find((st) => st.stage !== "fetch" && (st.status === "ready" || st.status === "stale"));
+  const runnable = (st) => st.stage !== "fetch" && st.status !== "blocked" && st.status !== "skipped";
+  const next = s.stages.find((st) => st.stage !== "fetch" && st.status !== "skipped" && (st.status === "ready" || st.status === "stale"));
   if (!armed && next) armed = next.stage;
   const armedRow = s.stages.find((st) => st.stage === armed && runnable(st)) || null;
 
@@ -509,7 +568,7 @@ function render() {
 
 function segment(st, i, runningHere) {
   const isRun = runningHere && state.job.stage === st.stage;
-  const armable = st.stage !== "fetch" && st.status !== "blocked";
+  const armable = st.stage !== "fetch" && st.status !== "blocked" && st.status !== "skipped";
   const cls = ["seg", st.status];
   if (isRun) cls.push("running");
   else if (!runningHere && armed === st.stage && armable) cls.push("armed");

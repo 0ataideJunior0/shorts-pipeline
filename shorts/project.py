@@ -195,11 +195,21 @@ class Manifest:
         entry.update(fields)
         self.stages[stage] = entry
 
+    def stage_skipped(self, stage: str, **fields) -> None:
+        entry = self.stages.get(stage, {})
+        entry["status"] = "skipped"
+        entry["at"] = utcnow_iso()
+        entry.update(fields)
+        self.stages[stage] = entry
+
     def get_stage(self, stage: str) -> dict | None:
         return self.stages.get(stage)
 
     def is_stage_done(self, stage: str) -> bool:
         return self.stages.get(stage, {}).get("status") == "done"
+
+    def is_stage_skipped(self, stage: str) -> bool:
+        return (self.stages.get(stage) or {}).get("status") == "skipped"
 
     def set_idea(self, slug: str, **fields) -> None:
         entry = self.ideas.get(slug, {})

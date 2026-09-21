@@ -1,3 +1,4 @@
+import io
 import json
 from pathlib import Path
 
@@ -311,6 +312,123 @@ def test_post_projects_starts_fetch(fake_client):
     stage, project, cmd = fake.started[0]
     assert stage == "fetch" and project == "new-clip"
     assert cmd[-4:] == ["fetch", "http://x", "--name", "new-clip"]
+
+
+def test_post_projects_text_payload(client):
+    c, cfg, _ = client
+    resp = c.post(
+        "/api/projects",
+        json={"name": "Text Project", "text": "Some instruction text"},
+    )
+    assert resp.status_code == 201
+    data = resp.get_json()
+    assert data["source"]["type"] == "text"
+    assert data["source"]["title"] == "Text Project"
+    stages = {s["stage"]: s["status"] for s in data["stages"]}
+    assert stages["fetch"] == "skipped"
+    assert stages["transcribe"] == "skipped"
+    assert stages["ideate"] == "ready"
+
+    # Disk verification
+    project_dir = cfg.projects_dir / "text-project"
+    transcript_file = project_dir / "transcript" / "transcript.txt"
+    assert transcript_file.read_text(encoding="utf-8") == "Some instruction text"
+
+
+def test_post_projects_file_upload(client):
+    c, cfg, _ = client
+    resp = c.post(
+        "/api/projects",
+        data={
+            "name": "File Project",
+            "file": (io.BytesIO(b"hello markdown"), "notes.md"),
+        },
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 201
+    data = resp.get_json()
+    assert data["source"]["type"] == "file"
+    assert data["source"]["title"] == "File Project"
+    assert data["source"]["file"] == "notes.md"
+    stages = {s["stage"]: s["status"] for s in data["stages"]}
+    assert stages["fetch"] == "skipped"
+    assert stages["transcribe"] == "skipped"
+    assert stages["ideate"] == "ready"
+
+    # Disk verification
+    project_dir = cfg.projects_dir / "file-project"
+    transcript_file = project_dir / "transcript" / "transcript.txt"
+    assert transcript_file.read_text(encoding="utf-8") == "hello markdown"
+
+
+def test_post_projects_file_unsupported_extension(client):
+    c, _, _ = client
+    resp = c.post(
+        "/api/projects",
+        data={
+            "name": "Pdf Project",
+            "file": (io.BytesIO(b"%PDF-1.4..."), "notes.pdf"),
+        },
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "only .txt and .md files are supported"
+
+
+def test_post_projects_file_exceeds_5mb(client):
+    c, _, _ = client
+    big_data = b"x" * (5 * 1024 * 1024 + 1)
+    resp = c.post(
+        "/api/projects",
+        data={
+            "name": "Big Project",
+            "file": (io.BytesIO(big_data), "big.txt"),
+        },
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "file exceeds 5MB limit"
+
+
+def test_post_projects_neither_url_text_nor_file(client):
+    c, _, _ = client
+    resp = c.post("/api/projects", json={"name": "No Source"})
+    assert resp.status_code == 400
+    assert "error" in resp.get_json()
+
+
+def test_post_projects_multiple_sources_rejected(client):
+    c, _, _ = client
+    resp = c.post(
+        "/api/projects",
+        json={"name": "Both", "url": "http://x", "text": "y"},
+    )
+    assert resp.status_code == 400
+    assert "error" in resp.get_json()
+
+
+def test_post_projects_file_invalid_utf8(client):
+    c, _, _ = client
+    resp = c.post(
+        "/api/projects",
+        data={
+            "name": "Invalid UTF8",
+            "file": (io.BytesIO(b"\xff\xfe\x00\x00"), "invalid.txt"),
+        },
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 400
+    assert "error" in resp.get_json()
+
+
+def test_post_projects_existing_project_conflict_and_force(client):
+    c, _, _ = client
+    resp = c.post("/api/projects", json={"name": "demo", "text": "duplicate"})
+    assert resp.status_code == 409
+    assert "already exists" in resp.get_json()["error"]
+
+    resp_force = c.post("/api/projects", json={"name": "demo", "text": "overwritten", "force": True})
+    assert resp_force.status_code == 201
 
 
 def test_stream_returns_buffered_event(fake_client):

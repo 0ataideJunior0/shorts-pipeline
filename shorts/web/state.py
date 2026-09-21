@@ -95,27 +95,38 @@ def stage_rows(
     rows: list[dict] = []
 
     # fetch
-    if manifest.is_stage_done("fetch") and project.video_path.exists():
+    fetch_stage = manifest.get_stage("fetch")
+    if fetch_stage and fetch_stage.get("status") == "skipped":
+        rows.append({"stage": "fetch", "status": "skipped", "at": at("fetch"), "detail": "skipped"})
+        fetch_done = True
+    elif manifest.is_stage_done("fetch") and project.video_path.exists():
         rows.append({"stage": "fetch", "status": "done", "at": at("fetch"), "detail": ""})
+        fetch_done = True
     else:
         rows.append({"stage": "fetch", "status": "ready", "at": at("fetch"),
                      "detail": "no source video"})
-    fetch_done = rows[-1]["status"] == "done"
+        fetch_done = False
 
     # transcribe
-    if not fetch_done:
+    transcribe_stage = manifest.get_stage("transcribe")
+    if transcribe_stage and transcribe_stage.get("status") == "skipped":
+        rows.append({"stage": "transcribe", "status": "skipped", "at": at("transcribe"), "detail": "skipped"})
+        transcribe_done = True
+    elif not fetch_done:
         rows.append({"stage": "transcribe", "status": "blocked", "at": at("transcribe"),
                      "detail": "needs fetch"})
+        transcribe_done = False
     elif not (manifest.is_stage_done("transcribe") and project.transcript_txt_path.exists()):
         rows.append({"stage": "transcribe", "status": "ready", "at": at("transcribe"),
                      "detail": ""})
+        transcribe_done = False
     else:
         recorded = (manifest.get_stage("transcribe") or {}).get("audio_sha256")
         current = sha256_file(project.audio_path) if project.audio_path.exists() else recorded
         status = "done" if recorded == current else "stale"
         rows.append({"stage": "transcribe", "status": status, "at": at("transcribe"),
                      "detail": "" if status == "done" else "audio changed"})
-    transcribe_done = rows[-1]["status"] == "done"
+        transcribe_done = rows[-1]["status"] == "done"
 
     # ideate
     if not transcribe_done:

@@ -15,6 +15,7 @@ from shorts.web.edits import (
 from shorts.markdown import _section, parse_idea_file, set_approved
 from shorts.openai_helpers import get_client, refine_idea_text
 from shorts.project import Manifest, Project, slugify
+from shorts.prompt import ensure_prompt_file
 from shorts.web.jobs import (
     ALLOWED_STAGES, JobBusy, JobRunner, _HEARTBEAT_SECONDS, sse_format, stage_argv,
 )
@@ -75,6 +76,13 @@ def create_app(config: Config) -> Flask:
         except (json.JSONDecodeError, KeyError):
             return _json_error(422, f"{project.name}/manifest.json is not valid JSON")
         snap["job"] = _runner().state() if _runner().running() else None
+        if project.manifest_path.exists():
+            try:
+                m = Manifest.load(project.manifest_path)
+                if m.source:
+                    snap["source"] = {**snap.get("source", {}), **m.source}
+            except Exception:
+                pass
         return jsonify(snap)
 
     @app.put("/api/projects/<name>/prompt")
@@ -237,18 +245,87 @@ def create_app(config: Config) -> Flask:
     @app.post("/api/projects")
     def api_new_project():
         body = request.get_json(silent=True) or {}
-        url = str(body.get("url", "")).strip()
-        name = str(body.get("name", "")).strip()
-        if not url or not name:
-            return _json_error(400, "url and name are required")
+        name = str(body.get("name") or request.form.get("name") or "").strip()
+        if not name:
+            return _json_error(400, "name is required")
+
+        force_val = body.get("force") if "force" in body else request.form.get("force")
+        force = bool(force_val) if not isinstance(force_val, str) else force_val.lower() in ("true", "1")
+
+        url = str(body.get("url") or request.form.get("url") or "").strip()
+        text = str(body.get("text") or request.form.get("text") or "").strip()
+        uploaded_file = request.files.get("file")
+
+        has_url = bool(url)
+        has_text = bool(text)
+        has_file = uploaded_file is not None and bool(uploaded_file.filename and uploaded_file.filename.strip())
+
+        if uploaded_file is not None and not (uploaded_file.filename and uploaded_file.filename.strip()):
+            if not has_url and not has_text:
+                return _json_error(400, "file is required and filename cannot be empty")
+
+        num_sources = sum([has_url, has_text, has_file])
+        if num_sources == 0:
+            return _json_error(400, "url, text, or file is required")
+        if num_sources > 1:
+            return _json_error(400, "provide only one of url, text, or file")
+
         slug = slugify(name)
-        cmd = [sys.executable, "-m", "shorts",
-               *stage_argv("fetch", slug, url=url, force=bool(body.get("force")))]
-        try:
-            _runner().start("fetch", slug, cmd)
-        except JobBusy as exc:
-            return _json_error(409, str(exc))
-        return jsonify(_runner().state()), 202
+
+        if has_url:
+            cmd = [sys.executable, "-m", "shorts",
+                   *stage_argv("fetch", slug, url=url, force=force)]
+            try:
+                _runner().start("fetch", slug, cmd)
+            except JobBusy as exc:
+                return _json_error(409, str(exc))
+            return jsonify(_runner().state()), 202
+
+        if has_text:
+            content = text
+            source_dict = {"type": "text", "title": name}
+        else:  # has_file
+            ext = Path(uploaded_file.filename).suffix.lower()
+            if ext not in (".txt", ".md"):
+                return _json_error(400, "only .txt and .md files are supported")
+            content_bytes = uploaded_file.read()
+            if len(content_bytes) > 5 * 1024 * 1024:
+                return _json_error(400, "file exceeds 5MB limit")
+            try:
+                content = content_bytes.decode("utf-8")
+            except UnicodeDecodeError:
+                return _json_error(400, "failed to decode file as UTF-8")
+            filename = Path(uploaded_file.filename).name
+            if not filename:
+                return _json_error(400, "filename cannot be empty")
+            source_dict = {"type": "file", "title": name, "file": filename}
+
+        project_root = config.projects_dir / slug
+        if project_root.exists():
+            if not force:
+                return _json_error(409, f"project '{slug}' already exists")
+            project = Project.load(config.projects_dir, slug)
+        else:
+            project = Project.create(config.projects_dir, slug)
+
+        project.ensure_dirs()
+        ensure_prompt_file(project)
+        project.transcript_txt_path.write_text(content, encoding="utf-8")
+
+        manifest = (
+            Manifest.load(project.manifest_path)
+            if project.manifest_path.exists()
+            else Manifest.new(slug)
+        )
+        manifest.source = source_dict
+        manifest.stage_skipped("fetch")
+        manifest.stage_skipped("transcribe")
+        manifest.save(project.manifest_path)
+
+        snap = _snapshot(project)
+        if isinstance(snap, tuple):
+            return snap
+        return snap, 201
 
     @app.post("/api/projects/<name>/run/<stage>")
     def api_run_stage(name: str, stage: str):
