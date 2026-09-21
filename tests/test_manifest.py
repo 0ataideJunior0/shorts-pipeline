@@ -162,3 +162,31 @@ def test_settings_absent_loads_empty(tmp_path):
     assert loaded.settings == {}
     assert loaded.get_setting("count", default=6) == 6
 
+
+
+def test_concurrent_saves_do_not_collide(tmp_path):
+    # The UI fires two publish GETs at once and each one saves the manifest; a
+    # temp file shared between saves made one os.replace find its source gone.
+    import threading
+
+    path = tmp_path / "manifest.json"
+    Manifest.new("demo").save(path)
+    errors = []
+    barrier = threading.Barrier(8)
+
+    def worker():
+        m = Manifest.load(path)
+        barrier.wait()
+        try:
+            for _ in range(60):
+                m.save(path)
+        except Exception as exc:  # noqa: BLE001 - any failure is the bug
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker) for _ in range(8)]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+
+    assert errors == []
+    assert Manifest.load(path).name == "demo"
+    assert not list(tmp_path.glob("*.tmp"))

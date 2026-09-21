@@ -4,6 +4,8 @@ import hashlib
 import json
 import os
 import re
+import threading
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -186,12 +188,28 @@ class Manifest:
 
     def save(self, path: Path) -> None:
         path = Path(path)
-        tmp = path.with_name(path.name + ".tmp")
-        tmp.write_text(
-            json.dumps(self._to_dict(), indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
-        os.replace(tmp, path)
+        # unique per save: concurrent saves (the UI fetches the YouTube and TikTok
+        # queues at once, and each one saves) must not share a temp file, or one
+        # os.replace finds its source already moved by the other
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+        try:
+            tmp.write_text(
+                json.dumps(self._to_dict(), indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+            # POSIX rename is atomic; on Windows replacing a file another thread is
+            # replacing at that instant raises PermissionError, which clears at once
+            for attempt in range(10):
+                try:
+                    os.replace(tmp, path)
+                    break
+                except PermissionError:
+                    if os.name != "nt" or attempt == 9:
+                        raise
+                    time.sleep(0.005 * (attempt + 1))
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise
 
     def stage_done(self, stage: str, **fields) -> None:
         entry = self.stages.get(stage, {})
