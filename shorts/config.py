@@ -22,6 +22,7 @@ class TranscribeCfg:
 class IdeateCfg:
     model: str
     count: int
+    desired_video_length: int
 
 
 @dataclass(frozen=True)
@@ -231,13 +232,24 @@ def load_config(root: Path | None = None) -> Config:
     if yt_category <= 0:
         raise ConfigError("youtube.category_id must be > 0")
 
+    try:
+        desired_length = int(i.get("desired_video_length", 90))
+    except (ValueError, TypeError):
+        raise ConfigError("ideate.desired_video_length must be an integer >= 10") from None
+    if desired_length < 10:
+        raise ConfigError("ideate.desired_video_length must be >= 10")
+
     return Config(
         root=root,
         projects_dir=projects_dir,
         assets_dir=assets_dir,
         aspect=aspect,
         transcribe=TranscribeCfg(model=str(t.get("model", "whisper-1"))),
-        ideate=IdeateCfg(model=str(i.get("model", "gpt-4.1")), count=count),
+        ideate=IdeateCfg(
+            model=str(i.get("model", "gpt-4.1")),
+            count=count,
+            desired_video_length=desired_length,
+        ),
         voice=VoiceCfg(
             base_url=str(v.get("base_url", "http://localhost:3900")),
             model=str(v.get("model", "omnivoice")),

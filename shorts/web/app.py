@@ -363,6 +363,7 @@ def create_app(config: Config) -> Flask:
             return _json_error(404, f"no such project: {name}")
         body = request.get_json(silent=True) or {}
         count = None
+        desired_length = None
         if stage == "ideate":
             count_raw = body.get("count")
             if count_raw is not None:
@@ -370,8 +371,18 @@ def create_app(config: Config) -> Flask:
                     count = _validate_count(count_raw)
                 except (ValueError, TypeError):
                     return _json_error(422, "count must be an integer >= 1")
+            
+            dl_raw = body.get("desired_length")
+            if dl_raw is not None and str(dl_raw).strip() != "":
+                try:
+                    desired_length = int(dl_raw)
+                    if desired_length < 10:
+                        raise ValueError
+                except (ValueError, TypeError):
+                    return _json_error(422, "desired_length must be an integer >= 10")
+
         cmd = [sys.executable, "-m", "shorts",
-               *stage_argv(stage, name, force=bool(body.get("force")), count=count)]
+               *stage_argv(stage, name, force=bool(body.get("force")), count=count, desired_length=desired_length)]
         try:
             _runner().start(stage, name, cmd)
         except JobBusy as exc:

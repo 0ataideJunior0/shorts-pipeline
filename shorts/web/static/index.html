@@ -824,12 +824,16 @@ function deck(s, armedRow, runningHere) {
     const countInput = st.stage === "ideate"
       ? `<label style="display:inline-flex; align-items:center; gap:.3rem; font-size:12px; color:var(--ink-dim);">count <input type="number" id="armcount" min="1" step="1" style="width:3.5rem; padding:2px 4px; font:12px var(--mono);" value="${escapeHtml(state.settings && state.settings.count != null ? state.settings.count : "")}" placeholder="def"></label>`
       : "";
+    const desiredLengthInput = st.stage === "ideate"
+      ? `<label style="display:inline-flex; align-items:center; gap:.3rem; font-size:12px; color:var(--ink-dim);">length (s) <input type="number" id="armdesiredlength" min="10" step="1" style="width:3.5rem; padding:2px 4px; font:12px var(--mono);" value="${escapeHtml(state.default_desired_length != null ? state.default_desired_length : "")}" placeholder="90"></label>`
+      : "";
     return `<div class="deck armed" aria-live="polite">
       <span class="d-stage">${st.stage}</span>
       <span class="d-status">${st.status}</span>
       <span class="d-detail">${escapeHtml(detail)}</span>
       <span class="spacer"></span>
       ${countInput}
+      ${desiredLengthInput}
       <label><input type="checkbox" id="armforce"> force</label>
       <button class="btn btn-run" id="armrun">Run ${st.stage}</button>
     </div>`;
@@ -882,7 +886,7 @@ function ideaCard(idea) {
 }
 
 /* ---------- run controls ---------- */
-async function runStage(stage, force, count) {
+async function runStage(stage, force, count, desired_length) {
   if (pending || jobHereRunning()) return;
   pending = true;
   startedAt = Date.now();
@@ -890,8 +894,9 @@ async function runStage(stage, force, count) {
   render();
   try {
     const payload = { force };
-    if (stage === "ideate" && count != null && !isNaN(count)) {
-      payload.count = count;
+    if (stage === "ideate") {
+      if (count != null && !isNaN(count)) payload.count = count;
+      if (desired_length != null && !isNaN(desired_length)) payload.desired_length = desired_length;
     }
     await api("POST", `/api/projects/${encodeURIComponent(state.name)}/run/${stage}`, payload);
   } catch (err) {
@@ -911,7 +916,9 @@ function wire() {
     const force = $("#armforce") ? $("#armforce").checked : false;
     const countInput = $("#armcount");
     const countVal = countInput && countInput.value.trim() ? parseInt(countInput.value.trim(), 10) : undefined;
-    runStage(armed, force, countVal);
+    const dlInput = $("#armdesiredlength");
+    const dlVal = dlInput && dlInput.value.trim() ? parseInt(dlInput.value.trim(), 10) : undefined;
+    runStage(armed, force, countVal, dlVal);
   };
   const stop = $("#stop");
   if (stop) stop.onclick = () => {

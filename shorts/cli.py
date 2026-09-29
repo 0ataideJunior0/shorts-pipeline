@@ -167,16 +167,23 @@ def transcribe(ctx: click.Context, name: str | None, force: bool) -> None:
     default=None,
     help="Number of shorts to generate (overrides project setting).",
 )
+@click.option(
+    "--desired-length",
+    type=click.IntRange(min=10),
+    default=None,
+    help="Desired video length in seconds (overrides config).",
+)
 @click.pass_context
 def ideate(
     ctx: click.Context,
     name: str | None,
     force: bool,
     count: int | None,
+    desired_length: int | None,
 ) -> None:
     """Generate shorts ideas from the transcript."""
     config = _config(ctx)
-    ideate_stage.run(_resolve(config, name), config, force=force, count=count)
+    ideate_stage.run(_resolve(config, name), config, force=force, count=count, desired_length=desired_length)
 
 
 @cli.command()
