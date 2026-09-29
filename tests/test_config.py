@@ -28,7 +28,6 @@ def _write(root: Path, *, toml: str | None = None, env_key: str | None = "sk-tes
 
         [ideate]
         model = "gpt-4.1"
-        count = 6
 
         [voice]
         model = "omnivoice"
@@ -61,7 +60,6 @@ def test_loads_valid_config(tmp_path):
     assert cfg.projects_dir == (tmp_path / "projects").resolve()
     assert cfg.assets_dir == (tmp_path / "assets")
     assert cfg.aspect == "9:16"
-    assert cfg.ideate.count == 6
     assert cfg.voice.base_url == "http://localhost:3900"
     assert cfg.voice.model == "omnivoice"
     assert cfg.voice.voice == "39f10351"
@@ -206,16 +204,6 @@ def test_bad_aspect(tmp_path):
         load_config(tmp_path)
 
 
-def test_bad_count(tmp_path):
-    assets = tmp_path / "assets"
-    assets.mkdir()
-    (tmp_path / "config.toml").write_text(
-        f'projects_dir="projects"\nassets_dir="{_toml_path(assets)}"\n\n[ideate]\ncount=0\n')
-    _write_env(tmp_path)
-    with pytest.raises(ConfigError, match="ideate.count must be >= 1"):
-        load_config(tmp_path)
-
-
 def test_invalid_toml(tmp_path):
     assets = tmp_path / "assets"
     assets.mkdir()
@@ -259,32 +247,6 @@ def test_youtube_bad_category_id(tmp_path):
         load_config(tmp_path)
 
 
-def test_env_ideate_count_overrides_config(tmp_path, monkeypatch):
-    _write(tmp_path)
-    monkeypatch.setenv("SHORTS_IDEATE_COUNT", "10")
-    cfg = load_config(tmp_path)
-    assert cfg.ideate.count == 10
-
-
-@pytest.mark.parametrize("bad_val", ["0", "-5", "abc", "1.5"])
-def test_env_ideate_count_invalid(tmp_path, monkeypatch, bad_val):
-    _write(tmp_path)
-    monkeypatch.setenv("SHORTS_IDEATE_COUNT", bad_val)
-    with pytest.raises(ConfigError, match="SHORTS_IDEATE_COUNT must be an integer >= 1"):
-        load_config(tmp_path)
-
-
-def test_env_ideate_count_unset(tmp_path):
-    _write(tmp_path)
-    cfg = load_config(tmp_path)
-    assert cfg.ideate.count == 6
-
-
-def test_env_ideate_count_empty_uses_toml(tmp_path, monkeypatch):
-    _write(tmp_path)
-    monkeypatch.setenv("SHORTS_IDEATE_COUNT", "")
-    cfg = load_config(tmp_path)
-    assert cfg.ideate.count == 6
 
 
 def test_update_subtitle_config_updates_and_preserves_comments(tmp_path):

@@ -56,7 +56,7 @@ def run(
         ):
             effective_count = manifest_count
         else:
-            effective_count = config.ideate.count
+            effective_count = 5
 
     transcript = project.transcript_txt_path.read_text()
     title = manifest.source.get("title", project.name)
