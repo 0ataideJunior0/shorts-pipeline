@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 import json
 import os
 import queue
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 from flask import Flask, Response, jsonify, request, send_from_directory
 
-from shorts.config import Config
+from shorts.config import Config, ConfigError, load_config, update_subtitle_config
 from shorts.web.edits import (
     EditError, apply_idea_edit, build_prompt_json, validate_plan_text,
 )
@@ -27,9 +29,28 @@ _TIME_RE = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
 
 
 def _atomic_write(path: Path, text: str) -> None:
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
+    tmp_path: Path | None = None
+    try:
+        stat = os.stat(path) if path.exists() else None
+        with tempfile.NamedTemporaryFile(
+            "w",
+            dir=path.parent,
+            encoding="utf-8",
+            delete=False,
+        ) as tmp:
+            tmp_path = Path(tmp.name)
+            tmp.write(text)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+        if stat is not None:
+            os.chmod(tmp_path, stat.st_mode)
+        os.replace(tmp_path, path)
+    finally:
+        if tmp_path is not None and tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
 
 
 def _json_error(status: int, message: str):
@@ -56,10 +77,30 @@ def create_app(config: Config) -> Flask:
     app = Flask(__name__, static_folder=None)
     runner = JobRunner(config.root)
     app.config["SHORTS_CONFIG"] = config
+    app.config["ROOT_DIR"] = config.root
     app.config["JOB_RUNNER"] = runner
 
     def _runner():
         return app.config["JOB_RUNNER"]
+
+    @app.get("/api/config/subtitles")
+    def api_get_subtitles_config():
+        cfg = app.config.get("SHORTS_CONFIG", config)
+        return jsonify(asdict(cfg.render.subtitle))
+
+    @app.put("/api/config/subtitles")
+    def api_put_subtitles_config():
+        payload = request.get_json(silent=True)
+        if payload is None:
+            return _json_error(400, "request body must be a JSON object")
+        root_dir = app.config.get("ROOT_DIR") or getattr(app.config.get("SHORTS_CONFIG"), "root", None)
+        try:
+            update_subtitle_config(payload, root=root_dir)
+            new_config = load_config(root_dir)
+            app.config["SHORTS_CONFIG"] = new_config
+            return jsonify(asdict(new_config.render.subtitle))
+        except ConfigError as exc:
+            return _json_error(422, str(exc))
 
     @app.get("/")
     def index():

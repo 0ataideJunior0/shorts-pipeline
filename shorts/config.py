@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import os
 import re
+import tempfile
 import tomllib
+from collections.abc import MutableMapping
 from dataclasses import dataclass
 from pathlib import Path
 
+import tomlkit
 from dotenv import load_dotenv
 
 
@@ -80,6 +83,29 @@ class Config:
 _ASPECTS = {"9:16", "16:9"}
 _SUBTITLE_POSITIONS = {"bottom", "middle", "top"}
 _HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
+_SUBTITLE_STYLING_FIELDS = (
+    "font",
+    "font_size",
+    "primary_color",
+    "bold",
+    "italic",
+    "uppercase",
+    "position",
+    "margin_vertical",
+    "max_chars_per_line",
+    "max_lines",
+    "max_duration",
+)
+_FIELD_ALIASES = {
+    "size": "font_size",
+    "color": "primary_color",
+}
+
+
+def _to_bool(value: object) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "1", "yes")
+    return bool(value)
 
 
 def _pos_int(value: object, key: str, *, minimum: int) -> int | None:
@@ -254,3 +280,150 @@ def load_config(root: Path | None = None) -> Config:
             category_id=yt_category,
         ),
     )
+
+
+def update_subtitle_config(
+    payload: dict,
+    root: Path | str | None = None,
+    *,
+    config_path: Path | str | None = None,
+) -> SubtitleCfg:
+    """Update `[render.subtitle]` in config.toml from `payload`, preserving comments.
+
+    Keys mapping to SubtitleCfg styling fields that are missing or null in `payload`
+    are removed so they revert to engine defaults. Writes changes back to disk
+    and returns the resulting SubtitleCfg.
+    """
+    if not isinstance(payload, dict):
+        raise ConfigError(f"payload must be a dict, got {type(payload).__name__}")
+
+    if config_path is not None:
+        cfg_path = Path(config_path).expanduser().resolve()
+    elif root is not None:
+        p = Path(root).expanduser().resolve()
+        if p.is_file() or p.suffix == ".toml":
+            cfg_path = p
+        else:
+            cfg_path = p / "config.toml"
+    else:
+        cfg_path = (Path.cwd() / "config.toml").resolve()
+
+    if not cfg_path.is_file():
+        raise ConfigError(
+            f"config.toml not found at {cfg_path} (copy config.example.toml)"
+        )
+
+    try:
+        raw_text = cfg_path.read_text(encoding="utf-8")
+        doc = tomlkit.parse(raw_text)
+    except Exception as exc:
+        raise ConfigError(f"config.toml is not valid TOML: {exc}") from exc
+
+    norm: dict[str, object] = {}
+    for k, v in payload.items():
+        norm[_FIELD_ALIASES.get(k, k)] = v
+
+    validated_styling: dict[str, object] = {}
+    for field in _SUBTITLE_STYLING_FIELDS:
+        val = norm.get(field)
+        if val is None or val == "":
+            continue
+        if field == "font":
+            font_str = str(val).strip()
+            if font_str:
+                validated_styling[field] = font_str
+        elif field == "font_size":
+            validated_styling[field] = _pos_int(
+                val, "render.subtitle.font_size", minimum=1
+            )
+        elif field == "primary_color":
+            color = str(val).strip()
+            if not _HEX_COLOR.match(color):
+                raise ConfigError(
+                    f"render.subtitle.primary_color must be a hex color #RRGGBB, "
+                    f"got {color!r}"
+                )
+            validated_styling[field] = color
+        elif field in ("bold", "italic", "uppercase"):
+            validated_styling[field] = _to_bool(val)
+        elif field == "position":
+            pos = str(val).strip().lower()
+            if pos not in _SUBTITLE_POSITIONS:
+                raise ConfigError(
+                    f"render.subtitle.position must be one of "
+                    f"{sorted(_SUBTITLE_POSITIONS)}, got {pos!r}"
+                )
+            validated_styling[field] = pos
+        elif field == "margin_vertical":
+            validated_styling[field] = _pos_int(
+                val, "render.subtitle.margin_vertical", minimum=0
+            )
+        elif field == "max_chars_per_line":
+            validated_styling[field] = _pos_int(
+                val, "render.subtitle.max_chars_per_line", minimum=1
+            )
+        elif field == "max_lines":
+            validated_styling[field] = _pos_int(
+                val, "render.subtitle.max_lines", minimum=1
+            )
+        elif field == "max_duration":
+            try:
+                dur = float(val)
+            except (TypeError, ValueError):
+                raise ConfigError(
+                    f"render.subtitle.max_duration must be a number, got {val!r}"
+                ) from None
+            if dur <= 0:
+                raise ConfigError("render.subtitle.max_duration must be > 0")
+            validated_styling[field] = dur
+
+    if "render" not in doc:
+        doc["render"] = tomlkit.table()
+    render_tbl = doc["render"]
+    if not isinstance(render_tbl, MutableMapping):
+        raise ConfigError("render in config.toml must be a table")
+
+    if "subtitle" not in render_tbl:
+        render_tbl["subtitle"] = tomlkit.table()
+    sub_table = render_tbl["subtitle"]
+    if not isinstance(sub_table, MutableMapping):
+        raise ConfigError("render.subtitle in config.toml must be a table")
+
+    if "enabled" in norm:
+        val = norm["enabled"]
+        if val is None or val == "":
+            sub_table.pop("enabled", None)
+        else:
+            sub_table["enabled"] = _to_bool(val)
+
+    for field in _SUBTITLE_STYLING_FIELDS:
+        if field in validated_styling:
+            sub_table[field] = validated_styling[field]
+        else:
+            sub_table.pop(field, None)
+
+    content = tomlkit.dumps(doc)
+    tmp_path: Path | None = None
+    try:
+        stat = os.stat(cfg_path) if cfg_path.exists() else None
+        with tempfile.NamedTemporaryFile(
+            "w",
+            dir=cfg_path.parent,
+            encoding="utf-8",
+            delete=False,
+        ) as tmp:
+            tmp_path = Path(tmp.name)
+            tmp.write(content)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+        if stat is not None:
+            os.chmod(tmp_path, stat.st_mode)
+        tmp_path.replace(cfg_path)
+    finally:
+        if tmp_path is not None and tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+    return _subtitle_cfg(dict(sub_table))
+

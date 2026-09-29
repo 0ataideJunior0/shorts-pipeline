@@ -1,11 +1,13 @@
 import io
 import json
+import os
 from pathlib import Path
 
 import pytest
 
 from shorts.config import (
     Config, IdeateCfg, RenderCfg, SubtitleCfg, TranscribeCfg, VoiceCfg, YouTubeCfg,
+    load_config,
 )
 from shorts.project import Manifest, Project
 from shorts.web.app import create_app
@@ -119,6 +121,41 @@ def test_index_served(client):
     assert b"refine-btn" in resp.data
     assert b"refine-prompt-input" in resp.data
     assert b"/refine" in resp.data
+
+
+def test_index_serves_subtitle_settings_ui(client):
+    c, _, _ = client
+    resp = c.get("/")
+    assert resp.status_code == 200
+    # Settings gear button
+    assert b"open-settings-btn" in resp.data
+    assert b"settings-btn" in resp.data
+
+    # Dialog modal
+    assert b'<dialog id="subtitles-modal">' in resp.data
+    assert b'<form id="subtitles-form"' in resp.data
+
+    # 12 SubtitleCfg fields
+    assert b'name="enabled"' in resp.data
+    assert b'name="font"' in resp.data
+    assert b'name="font_size"' in resp.data
+    assert b'name="primary_color"' in resp.data
+    assert b'name="bold"' in resp.data
+    assert b'name="italic"' in resp.data
+    assert b'name="uppercase"' in resp.data
+    assert b'name="position"' in resp.data
+    assert b'name="margin_vertical"' in resp.data
+    assert b'name="max_chars_per_line"' in resp.data
+    assert b'name="max_lines"' in resp.data
+    assert b'name="max_duration"' in resp.data
+
+    # Input types: color, number, select
+    assert b'type="color"' in resp.data
+    assert b'type="number"' in resp.data
+    assert b'<select id="sub-position"' in resp.data
+
+    # API endpoints called in JS
+    assert b"/api/config/subtitles" in resp.data
 
 
 def test_put_prompt_writes_file(client):
@@ -766,4 +803,204 @@ def test_post_refine_openai_error(client, monkeypatch):
     resp_err = c.post("/api/projects/demo/ideas/01-x/refine", json={"field": "title"})
     assert resp_err.status_code == 500
     assert "OpenAI rate limit reached" in resp_err.get_json()["error"]
+
+
+def _setup_subtitles_app(tmp_path: Path):
+    assets = tmp_path / "assets"
+    assets.mkdir(parents=True, exist_ok=True)
+    toml_content = (
+        'projects_dir = "projects"\n'
+        f'assets_dir = "{assets.as_posix()}"\n'
+        'aspect = "9:16"\n\n'
+        '[render]\n'
+        'min_beat_duration = 3.0\n\n'
+        '[render.subtitle]\n'
+        'enabled = true\n'
+    )
+    (tmp_path / "config.toml").write_text(toml_content, encoding="utf-8")
+    (tmp_path / ".env").write_text("OPENAI_API_KEY=sk-test\n", encoding="utf-8")
+    cfg = load_config(tmp_path)
+    app = create_app(cfg)
+    app.config.update(TESTING=True)
+    return app.test_client(), app, tmp_path
+
+
+def test_get_subtitles_config_returns_current(client):
+    c, _, _ = client
+    resp = c.get("/api/config/subtitles")
+    assert resp.status_code == 200
+    assert resp.get_json() == {
+        "enabled": True,
+        "font": None,
+        "font_size": None,
+        "primary_color": None,
+        "bold": False,
+        "italic": False,
+        "uppercase": False,
+        "position": None,
+        "margin_vertical": None,
+        "max_chars_per_line": None,
+        "max_lines": None,
+        "max_duration": None,
+    }
+
+
+def test_put_subtitles_config_success(tmp_path):
+    c, app, root = _setup_subtitles_app(tmp_path)
+    payload = {
+        "enabled": True,
+        "font": "Impact",
+        "font_size": 24,
+        "primary_color": "#FFCC00",
+        "bold": True,
+        "italic": True,
+        "uppercase": True,
+        "position": "middle",
+        "margin_vertical": 40,
+        "max_chars_per_line": 25,
+        "max_lines": 3,
+        "max_duration": 4.5,
+    }
+    resp = c.put("/api/config/subtitles", json=payload)
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["enabled"] is True
+    assert data["font"] == "Impact"
+    assert data["font_size"] == 24
+    assert data["primary_color"] == "#FFCC00"
+    assert data["bold"] is True
+    assert data["italic"] is True
+    assert data["uppercase"] is True
+    assert data["position"] == "middle"
+    assert data["margin_vertical"] == 40
+    assert data["max_chars_per_line"] == 25
+    assert data["max_lines"] == 3
+    assert data["max_duration"] == 4.5
+
+    # Verify app.config was updated without server restart
+    assert app.config["SHORTS_CONFIG"].render.subtitle.font == "Impact"
+    assert app.config["SHORTS_CONFIG"].render.subtitle.font_size == 24
+    assert app.config["SHORTS_CONFIG"].render.subtitle.primary_color == "#FFCC00"
+
+    # Verify subsequent GET returns updated values
+    get_resp = c.get("/api/config/subtitles")
+    assert get_resp.status_code == 200
+    assert get_resp.get_json() == data
+
+    # Verify disk was updated
+    content = (root / "config.toml").read_text(encoding="utf-8")
+    assert 'font = "Impact"' in content
+    assert 'font_size = 24' in content
+    assert 'primary_color = "#FFCC00"' in content
+
+
+def test_put_subtitles_config_aliases_and_reverts(tmp_path):
+    c, app, _ = _setup_subtitles_app(tmp_path)
+    resp = c.put("/api/config/subtitles", json={"size": 18, "color": "#00FF00"})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["font_size"] == 18
+    assert data["primary_color"] == "#00FF00"
+    assert app.config["SHORTS_CONFIG"].render.subtitle.font_size == 18
+    assert app.config["SHORTS_CONFIG"].render.subtitle.primary_color == "#00FF00"
+
+    # Revert styling keys by passing empty dict
+    resp2 = c.put("/api/config/subtitles", json={})
+    assert resp2.status_code == 200
+    data2 = resp2.get_json()
+    assert data2["font_size"] is None
+    assert data2["primary_color"] is None
+    assert app.config["SHORTS_CONFIG"].render.subtitle.font_size is None
+    assert app.config["SHORTS_CONFIG"].render.subtitle.primary_color is None
+
+
+def test_put_subtitles_config_toggle_enabled(tmp_path):
+    c, app, _ = _setup_subtitles_app(tmp_path)
+    resp = c.put("/api/config/subtitles", json={"enabled": False, "font": "Arial"})
+    assert resp.status_code == 200
+    assert resp.get_json()["enabled"] is False
+    assert resp.get_json()["font"] == "Arial"
+    assert app.config["SHORTS_CONFIG"].render.subtitle.enabled is False
+
+    resp2 = c.put("/api/config/subtitles", json={"enabled": True})
+    assert resp2.status_code == 200
+    assert resp2.get_json()["enabled"] is True
+    assert app.config["SHORTS_CONFIG"].render.subtitle.enabled is True
+
+
+@pytest.mark.parametrize("payload,expected_err", [
+    ({"position": "sideways"}, "render.subtitle.position must be one of"),
+    ({"primary_color": "blue"}, "render.subtitle.primary_color must be a hex color"),
+    ({"font_size": 0}, "render.subtitle.font_size must be >= 1"),
+    ({"font_size": -1}, "render.subtitle.font_size must be >= 1"),
+    ({"font_size": "abc"}, "render.subtitle.font_size must be an integer"),
+    ({"margin_vertical": -1}, "render.subtitle.margin_vertical must be >= 0"),
+    ({"max_chars_per_line": 0}, "render.subtitle.max_chars_per_line must be >= 1"),
+    ({"max_lines": 0}, "render.subtitle.max_lines must be >= 1"),
+    ({"max_duration": 0}, "render.subtitle.max_duration must be > 0"),
+    ({"max_duration": -1.0}, "render.subtitle.max_duration must be > 0"),
+    ({"max_duration": "not-a-number"}, "render.subtitle.max_duration must be a number"),
+])
+def test_put_subtitles_config_validation_errors(tmp_path, payload, expected_err):
+    c, _, _ = _setup_subtitles_app(tmp_path)
+    resp = c.put("/api/config/subtitles", json=payload)
+    assert resp.status_code == 422
+    assert expected_err in resp.get_json()["error"]
+
+
+def test_put_subtitles_config_invalid_body_format(tmp_path):
+    c, _, _ = _setup_subtitles_app(tmp_path)
+
+    # Malformed / non-JSON data
+    resp_bad_json = c.put("/api/config/subtitles", data="not json", content_type="application/json")
+    assert resp_bad_json.status_code == 400
+    assert "error" in resp_bad_json.get_json()
+
+    # Empty body
+    resp_empty = c.put("/api/config/subtitles", data="", content_type="application/json")
+    assert resp_empty.status_code == 400
+    assert "error" in resp_empty.get_json()
+
+    # JSON array instead of object
+    resp_list = c.put("/api/config/subtitles", json=["font", "Arial"])
+    assert resp_list.status_code == 422
+    assert "payload must be a dict" in resp_list.get_json()["error"]
+
+    # JSON scalar instead of object
+    resp_scalar = c.put("/api/config/subtitles", json="some string")
+    assert resp_scalar.status_code == 422
+    assert "payload must be a dict" in resp_scalar.get_json()["error"]
+
+
+def test_atomic_write_preserves_permissions(tmp_path):
+    from shorts.web.app import _atomic_write
+
+    target = tmp_path / "target.txt"
+    target.write_text("initial content", encoding="utf-8")
+    os.chmod(target, 0o644)
+
+    _atomic_write(target, "new content")
+
+    assert target.read_text(encoding="utf-8") == "new content"
+    assert os.stat(target).st_mode & 0o777 == 0o644
+
+
+def test_atomic_write_cleans_up_on_failure(tmp_path, monkeypatch):
+    from shorts.web.app import _atomic_write
+
+    target = tmp_path / "target.txt"
+    target.write_text("initial content", encoding="utf-8")
+
+    def mock_replace(src, dst):
+        raise OSError("Replace failed")
+
+    monkeypatch.setattr(os, "replace", mock_replace)
+    with pytest.raises(OSError, match="Replace failed"):
+        _atomic_write(target, "updated content")
+
+    assert target.read_text(encoding="utf-8") == "initial content"
+    remaining = [p.name for p in tmp_path.iterdir()]
+    assert remaining == ["target.txt"]
+
+
 
