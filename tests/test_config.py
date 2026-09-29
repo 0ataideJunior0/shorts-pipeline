@@ -60,6 +60,10 @@ def test_loads_valid_config(tmp_path):
     assert cfg.projects_dir == (tmp_path / "projects").resolve()
     assert cfg.assets_dir == (tmp_path / "assets")
     assert cfg.aspect == "9:16"
+<<<<<<< ours
+=======
+    assert cfg.ideate.desired_video_length == 90
+>>>>>>> theirs
     assert cfg.voice.base_url == "http://localhost:3900"
     assert cfg.voice.model == "omnivoice"
     assert cfg.voice.voice == "39f10351"
@@ -247,6 +251,7 @@ def test_youtube_bad_category_id(tmp_path):
         load_config(tmp_path)
 
 
+<<<<<<< ours
 
 
 def test_update_subtitle_config_updates_and_preserves_comments(tmp_path):
@@ -457,4 +462,6 @@ def test_update_subtitle_config_preserves_file_permissions(tmp_path):
 
 
 
+=======
+>>>>>>> theirs
 

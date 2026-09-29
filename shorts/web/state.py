@@ -135,13 +135,28 @@ def stage_rows(
     elif not manifest.is_stage_done("ideate"):
         rows.append({"stage": "ideate", "status": "ready", "at": at("ideate"), "detail": ""})
     else:
-        recorded = (manifest.get_stage("ideate") or {}).get("prompt_sha256")
+        ideate_stage = manifest.get_stage("ideate") or {}
+        recorded = ideate_stage.get("prompt_sha256")
+        recorded_length = ideate_stage.get("desired_length")
         from shorts.project import sha256_text
         current = sha256_text(prompt_text(project))
-        status = "done" if recorded in (None, current) else "stale"
+        
+        target_length = manifest.get_setting("desired_length")
+        if not isinstance(target_length, int) or isinstance(target_length, bool) or target_length < 10:
+            target_length = config.ideate.desired_video_length
+        
+        if recorded not in (None, current):
+            status = "stale"
+            detail = "prompt.json changed"
+        elif recorded_length not in (None, target_length):
+            status = "stale"
+            detail = "desired length changed"
+        else:
+            status = "done"
+            detail = f"{len(slugs)} ideas"
+            
         rows.append({"stage": "ideate", "status": status, "at": at("ideate"),
-                     "detail": f"{len(slugs)} ideas" if status == "done"
-                     else "prompt.json changed"})
+                     "detail": detail})
     ideate_done = rows[-1]["status"] == "done"
 
     # voice
@@ -235,6 +250,11 @@ def build_snapshot(project: Project, config: Config) -> dict:
         "prompt": prompt_text(project),
         "ideas": ideas,
         "job": None,
+        "default_desired_length": (
+            manifest.get_setting("desired_length")
+            if isinstance(manifest.get_setting("desired_length"), int) and not isinstance(manifest.get_setting("desired_length"), bool) and manifest.get_setting("desired_length") >= 10
+            else config.ideate.desired_video_length
+        ),
     }
 
 

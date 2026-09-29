@@ -86,7 +86,19 @@ def generate_ideas(
     prompt: str,
     model: str,
     count: int,
+    desired_length: int,
 ) -> list[IdeaSpec]:
+    target_words = int(desired_length * 2.5)
+    length_instruction = (
+        f"um roteiro de narração de aproximadamente {desired_length} segundos "
+        f"quando lido em voz alta (cerca de {target_words} palavras)"
+    )
+    old_hardcoded = "um roteiro de narração de 30 a 60 segundos quando lido em voz alta (cerca de 80 a 150 palavras)"
+    if old_hardcoded in prompt:
+        prompt = prompt.replace(old_hardcoded, length_instruction)
+    else:
+        prompt += f"\n\nATENÇÃO: O roteiro deve ter {length_instruction}."
+
     system_prompt = prompt.strip() + _STRUCTURAL_SUFFIX
     user_prompt = (
         f"Source video title: {video_title}\n\n"

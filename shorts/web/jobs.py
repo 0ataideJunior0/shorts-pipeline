@@ -31,6 +31,7 @@ def stage_argv(
     force: bool = False,
     slugs: list[str] | None = None,
     count: int | None = None,
+    desired_length: int | None = None,
 ) -> list[str]:
     if stage == "publish":
         argv = ["publish", name]
@@ -51,8 +52,11 @@ def stage_argv(
             argv += ["--count", str(count)]
     else:
         argv = [stage, name]
-        if stage == "ideate" and count is not None:
-            argv += ["--count", str(count)]
+        if stage == "ideate":
+            if count is not None:
+                argv += ["--count", str(count)]
+            if desired_length is not None:
+                argv += ["--desired-length", str(desired_length)]
         if stage == "voice" and slugs:
             for s in slugs:
                 argv += ["--slug", s]

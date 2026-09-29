@@ -14,6 +14,7 @@ def run(
     *,
     force: bool = False,
     count: int | None = None,
+    desired_length: int | None = None,
 ) -> None:
     if not project.transcript_txt_path.exists():
         raise SystemExit(
@@ -28,24 +29,9 @@ def run(
         raise SystemExit(str(exc))
     prompt_hash = sha256_text(prompt_text)
 
-    if manifest.is_stage_done("ideate") and not force:
-        prev = manifest.get_stage("ideate") or {}
-        sync_idea_state(project, manifest)
-        manifest.save(project.manifest_path)
-        if prev.get("prompt_sha256") not in (None, prompt_hash):
-            print(
-                "ideate: prompt.json changed since last ideate - "
-                "run with --force to regenerate"
-            )
-        else:
-            print(
-                "ideate: already generated; refreshed idea state. "
-                "Use --force to regenerate."
-            )
-        return
-
     if count is not None and count > 0:
         effective_count = count
+        manifest.set_setting("count", effective_count)
     else:
         manifest_count = manifest.get_setting("count")
         if (
@@ -58,6 +44,44 @@ def run(
         else:
             effective_count = 5
 
+    if desired_length is not None:
+        if desired_length < 10:
+            raise ValueError("desired_length must be >= 10")
+        effective_length = desired_length
+        manifest.set_setting("desired_length", effective_length)
+    else:
+        manifest_length = manifest.get_setting("desired_length")
+        if (
+            manifest_length is not None
+            and isinstance(manifest_length, int)
+            and not isinstance(manifest_length, bool)
+            and manifest_length >= 10
+        ):
+            effective_length = manifest_length
+        else:
+            effective_length = config.ideate.desired_video_length
+
+    if manifest.is_stage_done("ideate") and not force:
+        prev = manifest.get_stage("ideate") or {}
+        sync_idea_state(project, manifest)
+        manifest.save(project.manifest_path)
+        if prev.get("prompt_sha256") not in (None, prompt_hash):
+            print(
+                "ideate: prompt.json changed since last ideate - "
+                "run with --force to regenerate"
+            )
+        elif prev.get("desired_length") not in (None, effective_length):
+            print(
+                "ideate: desired_length changed since last ideate - "
+                "run with --force to regenerate"
+            )
+        else:
+            print(
+                "ideate: already generated; refreshed idea state. "
+                "Use --force to regenerate."
+            )
+        return
+
     transcript = project.transcript_txt_path.read_text()
     title = manifest.source.get("title", project.name)
     client = get_client(config.openai_api_key)
@@ -68,6 +92,7 @@ def run(
         prompt=prompt_text,
         model=config.ideate.model,
         count=effective_count,
+        desired_length=effective_length,
     )
 
     project.ideas_dir.mkdir(parents=True, exist_ok=True)
@@ -93,6 +118,7 @@ def run(
         transcript_sha256=sha256_file(project.transcript_txt_path),
         prompt_sha256=prompt_hash,
         count=effective_count,
+        desired_length=effective_length,
     )
     manifest.save(project.manifest_path)
     print(f"ideate: wrote {written} idea file(s) -> {project.ideas_dir}")

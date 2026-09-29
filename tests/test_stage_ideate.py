@@ -36,7 +36,7 @@ def _setup_project(tmp_path: Path, name: str = "demo", *, manifest_count: int | 
 def _fake_config(model: str = "gpt-4o-mini", api_key: str = "test-key") -> SimpleNamespace:
     return SimpleNamespace(
         openai_api_key=api_key,
-        ideate=SimpleNamespace(model=model),
+        ideate=SimpleNamespace(model=model, desired_video_length=90),
     )
 
 
@@ -158,3 +158,65 @@ def test_invalid_or_nonpositive_explicit_count_falls_back_to_manifest(tmp_path, 
     assert mock_generate.call_args.kwargs["count"] == 4
     manifest = Manifest.load(project.manifest_path)
     assert manifest.stages["ideate"]["count"] == 4
+
+
+def test_explicit_desired_length_overrides_config(tmp_path, monkeypatch):
+    project = _setup_project(tmp_path)
+    config = _fake_config()
+
+    mock_generate = MagicMock(return_value=[_sample_idea()])
+    mock_client = MagicMock()
+    monkeypatch.setattr(ideate, "get_client", lambda key: mock_client)
+    monkeypatch.setattr(ideate, "generate_ideas", mock_generate)
+
+    ideate.run(project, config, desired_length=45)
+
+    assert mock_generate.call_args.kwargs["desired_length"] == 45
+    manifest = Manifest.load(project.manifest_path)
+    assert manifest.stages["ideate"]["desired_length"] == 45
+
+
+def test_invalid_desired_length_raises_valueerror(tmp_path, monkeypatch):
+    project = _setup_project(tmp_path)
+    config = _fake_config()
+
+    with pytest.raises(ValueError, match="desired_length must be >= 10"):
+        ideate.run(project, config, desired_length=5)
+
+
+def test_manifest_desired_length_overrides_config(tmp_path, monkeypatch):
+    project = _setup_project(tmp_path)
+    manifest = Manifest.load(project.manifest_path)
+    manifest.set_setting("desired_length", 120)
+    manifest.save(project.manifest_path)
+    config = _fake_config()
+
+    mock_generate = MagicMock(return_value=[_sample_idea()])
+    mock_client = MagicMock()
+    monkeypatch.setattr(ideate, "get_client", lambda key: mock_client)
+    monkeypatch.setattr(ideate, "generate_ideas", mock_generate)
+
+    ideate.run(project, config, desired_length=None)
+
+    assert mock_generate.call_args.kwargs["desired_length"] == 120
+    manifest = Manifest.load(project.manifest_path)
+    assert manifest.stages["ideate"]["desired_length"] == 120
+
+
+def test_invalid_manifest_desired_length_falls_back_to_config(tmp_path, monkeypatch):
+    project = _setup_project(tmp_path)
+    manifest = Manifest.load(project.manifest_path)
+    manifest.set_setting("desired_length", 5) # invalid
+    manifest.save(project.manifest_path)
+    config = _fake_config() # defaults to 90
+
+    mock_generate = MagicMock(return_value=[_sample_idea()])
+    mock_client = MagicMock()
+    monkeypatch.setattr(ideate, "get_client", lambda key: mock_client)
+    monkeypatch.setattr(ideate, "generate_ideas", mock_generate)
+
+    ideate.run(project, config, desired_length=None)
+
+    assert mock_generate.call_args.kwargs["desired_length"] == 90
+    manifest = Manifest.load(project.manifest_path)
+    assert manifest.stages["ideate"]["desired_length"] == 90
