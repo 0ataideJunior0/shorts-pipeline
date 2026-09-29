@@ -14,7 +14,7 @@ def test_ideate_with_count(runner, monkeypatch):
     monkeypatch.setattr(cli, "_resolve", lambda cfg, name: f"project:{name}")
     seen = {}
 
-    def fake_run(project, config, *, force, count=None):
+    def fake_run(project, config, *, force, count=None, desired_length=None):
         seen["project"] = project
         seen["config"] = config
         seen["force"] = force
@@ -34,7 +34,7 @@ def test_ideate_without_count(runner, monkeypatch):
     monkeypatch.setattr(cli, "_resolve", lambda cfg, name: f"project:{name}")
     seen = {}
 
-    def fake_run(project, config, *, force, count=None):
+    def fake_run(project, config, *, force, count=None, desired_length=None):
         seen["project"] = project
         seen["config"] = config
         seen["force"] = force
@@ -62,7 +62,7 @@ def test_ideate_with_force_and_count(runner, monkeypatch):
     monkeypatch.setattr(cli, "_resolve", lambda cfg, name: f"project:{name}")
     seen = {}
 
-    def fake_run(project, config, *, force, count=None):
+    def fake_run(project, config, *, force, count=None, desired_length=None):
         seen["project"] = project
         seen["config"] = config
         seen["force"] = force

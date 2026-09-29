@@ -177,6 +177,18 @@ def create_app(config: Config) -> Flask:
                 except (ValueError, TypeError):
                     return _json_error(422, "count must be an integer >= 1")
                 manifest.set_setting("count", count)
+        if "desired_length" in body:
+            dl_raw = body["desired_length"]
+            if dl_raw is None or str(dl_raw).strip() == "":
+                manifest.settings.pop("desired_length", None)
+            else:
+                try:
+                    desired_length = int(dl_raw)
+                    if desired_length < 10:
+                        raise ValueError
+                except (ValueError, TypeError):
+                    return _json_error(422, "desired_length must be an integer >= 10")
+                manifest.set_setting("desired_length", desired_length)
         manifest.save(project.manifest_path)
         return _snapshot(project)
 

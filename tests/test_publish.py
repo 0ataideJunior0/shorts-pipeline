@@ -210,7 +210,7 @@ def _cfg(tmp_path):
     return Config(
         root=tmp_path, projects_dir=tmp_path / "projects", assets_dir=tmp_path / "assets",
         aspect="9:16",
-        transcribe=TranscribeCfg(model="w"), ideate=IdeateCfg(model="g", count=6),
+        transcribe=TranscribeCfg(model="w"), ideate=IdeateCfg(model="g", desired_video_length=90),
         voice=VoiceCfg(
             base_url="http://localhost:3900", model="m", voice="v",
             language=None, speed=1.0, instruct=None,

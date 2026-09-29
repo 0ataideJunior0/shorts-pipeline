@@ -144,6 +144,11 @@ def stage_rows(
         target_length = manifest.get_setting("desired_length")
         if not isinstance(target_length, int) or isinstance(target_length, bool) or target_length < 10:
             target_length = config.ideate.desired_video_length
+            
+        recorded_count = ideate_stage.get("count")
+        target_count = manifest.get_setting("count")
+        if not isinstance(target_count, int) or isinstance(target_count, bool) or target_count < 1:
+            target_count = 5
         
         if recorded not in (None, current):
             status = "stale"
@@ -151,6 +156,9 @@ def stage_rows(
         elif recorded_length not in (None, target_length):
             status = "stale"
             detail = "desired length changed"
+        elif recorded_count not in (None, target_count):
+            status = "stale"
+            detail = "target count changed"
         else:
             status = "done"
             detail = f"{len(slugs)} ideas"

@@ -75,6 +75,11 @@ def run(
                 "ideate: desired_length changed since last ideate - "
                 "run with --force to regenerate"
             )
+        elif prev.get("count") not in (None, effective_count):
+            print(
+                "ideate: target count changed since last ideate - "
+                "run with --force to regenerate"
+            )
         else:
             print(
                 "ideate: already generated; refreshed idea state. "
