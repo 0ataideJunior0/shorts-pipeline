@@ -182,11 +182,12 @@ def ideate(
 @cli.command()
 @click.argument("name", required=False)
 @click.option("--force", is_flag=True)
+@click.option("--slug", "slugs", multiple=True, help="Synthesize only these ideas.")
 @click.pass_context
-def voice(ctx: click.Context, name: str | None, force: bool) -> None:
+def voice(ctx: click.Context, name: str | None, force: bool, slugs: tuple[str, ...]) -> None:
     """Synthesize narration for approved ideas."""
     config = _config(ctx)
-    voice_stage.run(_resolve(config, name), config, force=force)
+    voice_stage.run(_resolve(config, name), config, force=force, slugs=list(slugs) or None)
 
 
 @cli.command()

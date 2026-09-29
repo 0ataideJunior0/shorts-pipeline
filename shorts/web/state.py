@@ -217,7 +217,7 @@ def build_snapshot(project: Project, config: Config) -> dict:
             "approved": bool(idea.get("approved")),
             "narration": p.narration if p else "",
             "voice": fr["voice"],
-            "voice_hash": (idea.get("voice") or {}).get("script_sha256", ""),
+            "voice_hash": str(project.voice_file(slug).stat().st_mtime) if project.voice_file(slug).exists() else "",
             "plan": fr["plan"],
             "render": fr["render"],
             "plan_json": plan_json,

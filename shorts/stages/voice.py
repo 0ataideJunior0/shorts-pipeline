@@ -6,7 +6,7 @@ from shorts.project import Manifest, Project
 from shorts.voicestudio_tts import synthesize_speech, voice_params_hash
 
 
-def run(project: Project, config: Config, *, force: bool = False) -> None:
+def run(project: Project, config: Config, *, force: bool = False, slugs: list[str] | None = None) -> None:
     if not project.ideas_dir.is_dir():
         raise SystemExit(
             f"no ideas - run: python -m shorts ideate {project.name}"
@@ -25,6 +25,8 @@ def run(project: Project, config: Config, *, force: bool = False) -> None:
 
     made = 0
     for slug, parsed in ideas:
+        if slugs and slug not in slugs:
+            continue
         entry = manifest.get_idea(slug)
         if not parsed.approved:
             print(f"voice: {slug} not approved, skipping")

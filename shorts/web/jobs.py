@@ -53,6 +53,9 @@ def stage_argv(
         argv = [stage, name]
         if stage == "ideate" and count is not None:
             argv += ["--count", str(count)]
+        if stage == "voice" and slugs:
+            for s in slugs:
+                argv += ["--slug", s]
     if force:
         argv.append("--force")
     return argv

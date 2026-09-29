@@ -275,7 +275,8 @@
   @keyframes track { 0% { left:-32%; } 100% { left:100%; } }
 
   /* ---- idea card audio ---- */
-  .card audio { width:100%; height:34px; margin:.5rem 0 0; display:block; }
+  .card-audio-row { display:flex; align-items:center; gap:.5rem; margin:.5rem 0 0; }
+  .card-audio-row audio { flex:1; height:34px; }
 
   /* ---- assets panel ---- */
   .assets summary { font-size:13px; font-weight:600; cursor:pointer; }
@@ -1002,7 +1003,10 @@ function ideaCard(idea) {
     : "";
 
   const audio = idea.voice !== "missing"
-    ? `<audio controls preload="none" src="/api/projects/${encodeURIComponent(state.name)}/voice/${encodeURIComponent(idea.slug)}?h=${encodeURIComponent(idea.voice_hash || "")}"></audio>`
+    ? `<div class="card-audio-row">
+         <audio controls preload="none" src="/api/projects/${encodeURIComponent(state.name)}/voice/${encodeURIComponent(idea.slug)}?h=${encodeURIComponent(idea.voice_hash || "")}"></audio>
+         <button type="button" class="btn run-voice-btn" title="Force regenerate audio">↻</button>
+       </div>`
     : "";
 
   return `<div class="card" data-slug="${escapeHtml(idea.slug)}">
@@ -1025,7 +1029,7 @@ function ideaCard(idea) {
 }
 
 /* ---------- run controls ---------- */
-async function runStage(stage, force, count) {
+async function runStage(stage, force, count, slugs) {
   if (pending || jobHereRunning()) return;
   pending = true;
   startedAt = Date.now();
@@ -1035,6 +1039,9 @@ async function runStage(stage, force, count) {
     const payload = { force };
     if (stage === "ideate" && count != null && !isNaN(count)) {
       payload.count = count;
+    }
+    if (slugs && slugs.length > 0) {
+      payload.slugs = slugs;
     }
     await api("POST", `/api/projects/${encodeURIComponent(state.name)}/run/${stage}`, payload);
   } catch (err) {
@@ -1149,6 +1156,10 @@ function wire() {
         render();
         toast("Plan saved");
       } catch (err) { $(".plan-err", card).textContent = err.message; }
+    };
+    const rv = $(".run-voice-btn", card);
+    if (rv) rv.onclick = () => {
+      runStage("voice", true, null, [slug]);
     };
   });
 }

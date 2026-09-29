@@ -435,8 +435,12 @@ def create_app(config: Config) -> Flask:
                     count = _validate_count(count_raw)
                 except (ValueError, TypeError):
                     return _json_error(422, "count must be an integer >= 1")
+        slugs = body.get("slugs")
+        if slugs is not None:
+            if not isinstance(slugs, list) or not all(isinstance(s, str) for s in slugs):
+                return _json_error(422, "slugs must be a list of strings")
         cmd = [sys.executable, "-m", "shorts",
-               *stage_argv(stage, name, force=bool(body.get("force")), count=count)]
+               *stage_argv(stage, name, force=bool(body.get("force")), count=count, slugs=slugs)]
         try:
             _runner().start(stage, name, cmd)
         except JobBusy as exc:
