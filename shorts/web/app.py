@@ -115,6 +115,30 @@ def create_app(config: Config) -> Flask:
         _atomic_write(project.prompt_path, content)
         return _snapshot(project)
 
+    @app.put("/api/projects/<name>/settings")
+    def api_put_settings(name: str):
+        try:
+            project = _load_project(config, name)
+        except FileNotFoundError:
+            return _json_error(404, f"no such project: {name}")
+        body = request.get_json(silent=True) or {}
+        try:
+            manifest = Manifest.load(project.manifest_path)
+        except FileNotFoundError:
+            return _json_error(404, f"manifest not found for project: {name}")
+        if "count" in body:
+            count_raw = body["count"]
+            if count_raw is None or str(count_raw).strip() == "":
+                manifest.settings.pop("count", None)
+            else:
+                try:
+                    count = _validate_count(count_raw)
+                except (ValueError, TypeError):
+                    return _json_error(422, "count must be an integer >= 1")
+                manifest.set_setting("count", count)
+        manifest.save(project.manifest_path)
+        return _snapshot(project)
+
     @app.put("/api/projects/<name>/ideas/<slug>")
     def api_put_idea(name: str, slug: str):
         try:

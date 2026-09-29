@@ -765,6 +765,13 @@ function render() {
     <button class="btn" id="save-prompt">Save brief</button>
     <span class="brief-help">Ideate reads this the next time it runs.</span>
 
+    <div class="head"><b>Settings</b><span class="fill"></span></div>
+    <div style="display:flex; align-items:center; gap:.5rem;">
+      <label style="font-size:13px; color:var(--ink);">Target shorts count</label>
+      <input type="number" id="setting-count" value="${s.settings && s.settings.count != null ? escapeHtml(s.settings.count) : ''}" placeholder="5" min="1" step="1" style="width:4.5rem; padding:4px 6px;">
+      <button class="btn" id="save-settings">Save</button>
+    </div>
+
     <div class="head"><b>Ideas</b><span class="fill"></span></div>
     ${s.ideas.map(ideaCard).join("") ||
       `<p class="muted">No ideas yet. Run ideate to generate them.</p>`}
@@ -822,7 +829,7 @@ function deck(s, armedRow, runningHere) {
       ? (st.detail || "Up to date. Run with force to rebuild it.")
       : (st.detail || "");
     const countInput = st.stage === "ideate"
-      ? `<label style="display:inline-flex; align-items:center; gap:.3rem; font-size:12px; color:var(--ink-dim);">count <input type="number" id="armcount" min="1" step="1" style="width:3.5rem; padding:2px 4px; font:12px var(--mono);" value="${escapeHtml(state.settings && state.settings.count != null ? state.settings.count : "")}" placeholder="def"></label>`
+      ? `<label style="display:inline-flex; align-items:center; gap:.3rem; font-size:12px; color:var(--ink-dim);">count <input type="number" id="armcount" min="1" step="1" style="width:3.5rem; padding:2px 4px; font:12px var(--mono);" value="${escapeHtml(s.settings && s.settings.count != null ? s.settings.count : "")}" placeholder="def"></label>`
       : "";
     return `<div class="deck armed" aria-live="polite">
       <span class="d-stage">${st.stage}</span>
@@ -927,6 +934,31 @@ function wire() {
       toast("Brief saved");
     } catch (err) { toast(err.message, "err"); }
   };
+
+  const saveSettings = $("#save-settings");
+  if (saveSettings) {
+    saveSettings.onclick = async () => {
+      const countInput = $("#setting-count");
+      if (!countInput) return;
+      const valStr = countInput.value.trim();
+      const payload = {};
+      if (!valStr) {
+        payload.count = null;
+      } else {
+        const countVal = parseInt(valStr, 10);
+        if (isNaN(countVal) || countVal < 1) {
+          toast("Target count must be >= 1", "err");
+          return;
+        }
+        payload.count = countVal;
+      }
+      try {
+        state = await api("PUT", `/api/projects/${encodeURIComponent(state.name)}/settings`, payload);
+        render();
+        toast("Settings saved");
+      } catch (err) { toast(err.message, "err"); }
+    };
+  }
 
   const cats = $(".assets");
   if (cats) cats.ontoggle = () => {

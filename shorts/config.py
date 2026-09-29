@@ -21,7 +21,6 @@ class TranscribeCfg:
 @dataclass(frozen=True)
 class IdeateCfg:
     model: str
-    count: int
 
 
 @dataclass(frozen=True)
@@ -186,21 +185,6 @@ def load_config(root: Path | None = None) -> Config:
     v = raw.get("voice", {})
     r = raw.get("render", {})
 
-    env_count = os.environ.get("SHORTS_IDEATE_COUNT")
-    if env_count is not None and env_count.strip():
-        try:
-            count = int(env_count)
-        except ValueError:
-            raise ConfigError(
-                "SHORTS_IDEATE_COUNT must be an integer >= 1"
-            ) from None
-        if count < 1:
-            raise ConfigError("SHORTS_IDEATE_COUNT must be an integer >= 1")
-    else:
-        count = int(i.get("count", 6))
-        if count < 1:
-            raise ConfigError("ideate.count must be >= 1")
-
     min_beat = float(r.get("min_beat_duration", 3.0))
     if min_beat <= 0:
         raise ConfigError("render.min_beat_duration must be > 0")
@@ -237,7 +221,7 @@ def load_config(root: Path | None = None) -> Config:
         assets_dir=assets_dir,
         aspect=aspect,
         transcribe=TranscribeCfg(model=str(t.get("model", "whisper-1"))),
-        ideate=IdeateCfg(model=str(i.get("model", "gpt-4.1")), count=count),
+        ideate=IdeateCfg(model=str(i.get("model", "gpt-4.1"))),
         voice=VoiceCfg(
             base_url=str(v.get("base_url", "http://localhost:3900")),
             model=str(v.get("model", "omnivoice")),
