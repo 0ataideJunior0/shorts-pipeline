@@ -215,7 +215,7 @@ def _cfg(tmp_path):
             base_url="http://localhost:3900", model="m", voice="v",
             language=None, speed=1.0, instruct=None,
         ),
-        render=RenderCfg(min_beat_duration=3.0, subtitle=SubtitleCfg(
+        render=RenderCfg(min_beat_duration=3.0, video_fit_mode="cover", subtitle=SubtitleCfg(
             enabled=True, font=None, font_size=None, primary_color=None, bold=False,
             italic=False, uppercase=False, position=None, margin_vertical=None,
             max_chars_per_line=None, max_lines=None, max_duration=None)),

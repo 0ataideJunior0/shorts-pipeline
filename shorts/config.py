@@ -56,6 +56,7 @@ class SubtitleCfg:
 @dataclass(frozen=True)
 class RenderCfg:
     min_beat_duration: float
+    video_fit_mode: str
     subtitle: SubtitleCfg
 
 
@@ -216,6 +217,10 @@ def load_config(root: Path | None = None) -> Config:
     if min_beat <= 0:
         raise ConfigError("render.min_beat_duration must be > 0")
 
+    video_fit_mode = str(r.get("video_fit_mode", "cover"))
+    if video_fit_mode not in {"cover", "contain"}:
+        raise ConfigError(f"render.video_fit_mode must be 'cover' or 'contain', got {video_fit_mode!r}")
+
     subtitle = _subtitle_cfg(r.get("subtitle", {}))
 
     voice_instruct = v.get("instruct")
@@ -267,7 +272,11 @@ def load_config(root: Path | None = None) -> Config:
             speed=voice_speed,
             instruct=voice_instruct,
         ),
-        render=RenderCfg(min_beat_duration=min_beat, subtitle=subtitle),
+        render=RenderCfg(
+            min_beat_duration=min_beat,
+            video_fit_mode=video_fit_mode,
+            subtitle=subtitle
+        ),
         openai_api_key=api_key,
         youtube=YouTubeCfg(
             client_secret=yt_secret,

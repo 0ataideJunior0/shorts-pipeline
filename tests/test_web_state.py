@@ -27,6 +27,7 @@ def _config(tmp_path):
         ),
         render=RenderCfg(
             min_beat_duration=3.0,
+            video_fit_mode="cover",
             subtitle=SubtitleCfg(
                 enabled=True, font=None, font_size=None, primary_color=None,
                 bold=False, italic=False, uppercase=False, position=None,
