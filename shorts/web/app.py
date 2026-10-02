@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 import json
 import os
 import queue
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 from flask import Flask, Response, jsonify, request, send_from_directory
 
-from shorts.config import Config
+from shorts.config import Config, ConfigError, load_config, update_subtitle_config
 from shorts.web.edits import (
     EditError, apply_idea_edit, build_prompt_json, validate_plan_text,
 )
@@ -37,9 +39,28 @@ def _target_for(platform: str, config):
 
 
 def _atomic_write(path: Path, text: str) -> None:
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
+    tmp_path: Path | None = None
+    try:
+        stat = os.stat(path) if path.exists() else None
+        with tempfile.NamedTemporaryFile(
+            "w",
+            dir=path.parent,
+            encoding="utf-8",
+            delete=False,
+        ) as tmp:
+            tmp_path = Path(tmp.name)
+            tmp.write(text)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+        if stat is not None:
+            os.chmod(tmp_path, stat.st_mode)
+        os.replace(tmp_path, path)
+    finally:
+        if tmp_path is not None and tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
 
 
 def _json_error(status: int, message: str):
@@ -66,10 +87,30 @@ def create_app(config: Config) -> Flask:
     app = Flask(__name__, static_folder=None)
     runner = JobRunner(config.root)
     app.config["SHORTS_CONFIG"] = config
+    app.config["ROOT_DIR"] = config.root
     app.config["JOB_RUNNER"] = runner
 
     def _runner():
         return app.config["JOB_RUNNER"]
+
+    @app.get("/api/config/subtitles")
+    def api_get_subtitles_config():
+        cfg = app.config.get("SHORTS_CONFIG", config)
+        return jsonify(asdict(cfg.render.subtitle))
+
+    @app.put("/api/config/subtitles")
+    def api_put_subtitles_config():
+        payload = request.get_json(silent=True)
+        if payload is None:
+            return _json_error(400, "request body must be a JSON object")
+        root_dir = app.config.get("ROOT_DIR") or getattr(app.config.get("SHORTS_CONFIG"), "root", None)
+        try:
+            update_subtitle_config(payload, root=root_dir)
+            new_config = load_config(root_dir)
+            app.config["SHORTS_CONFIG"] = new_config
+            return jsonify(asdict(new_config.render.subtitle))
+        except ConfigError as exc:
+            return _json_error(422, str(exc))
 
     @app.get("/")
     def index():
@@ -123,6 +164,42 @@ def create_app(config: Config) -> Flask:
             return _json_error(422, str(exc))
         project.ideas_dir.mkdir(parents=True, exist_ok=True)
         _atomic_write(project.prompt_path, content)
+        return _snapshot(project)
+
+    @app.put("/api/projects/<name>/settings")
+    def api_put_settings(name: str):
+        try:
+            project = _load_project(config, name)
+        except FileNotFoundError:
+            return _json_error(404, f"no such project: {name}")
+        body = request.get_json(silent=True) or {}
+        try:
+            manifest = Manifest.load(project.manifest_path)
+        except FileNotFoundError:
+            return _json_error(404, f"manifest not found for project: {name}")
+        if "count" in body:
+            count_raw = body["count"]
+            if count_raw is None or str(count_raw).strip() == "":
+                manifest.settings.pop("count", None)
+            else:
+                try:
+                    count = _validate_count(count_raw)
+                except (ValueError, TypeError):
+                    return _json_error(422, "count must be an integer >= 1")
+                manifest.set_setting("count", count)
+        if "desired_length" in body:
+            dl_raw = body["desired_length"]
+            if dl_raw is None or str(dl_raw).strip() == "":
+                manifest.settings.pop("desired_length", None)
+            else:
+                try:
+                    desired_length = int(dl_raw)
+                    if desired_length < 10:
+                        raise ValueError
+                except (ValueError, TypeError):
+                    return _json_error(422, "desired_length must be an integer >= 10")
+                manifest.set_setting("desired_length", desired_length)
+        manifest.save(project.manifest_path)
         return _snapshot(project)
 
     @app.put("/api/projects/<name>/ideas/<slug>")
@@ -373,6 +450,7 @@ def create_app(config: Config) -> Flask:
             return _json_error(404, f"no such project: {name}")
         body = request.get_json(silent=True) or {}
         count = None
+        desired_length = None
         if stage == "ideate":
             count_raw = body.get("count")
             if count_raw is not None:
@@ -380,8 +458,22 @@ def create_app(config: Config) -> Flask:
                     count = _validate_count(count_raw)
                 except (ValueError, TypeError):
                     return _json_error(422, "count must be an integer >= 1")
+        slugs = body.get("slugs")
+        if slugs is not None:
+            if not isinstance(slugs, list) or not all(isinstance(s, str) for s in slugs):
+                return _json_error(422, "slugs must be a list of strings")
+
+        dl_raw = body.get("desired_length")
+        if dl_raw is not None and str(dl_raw).strip() != "":
+            try:
+                desired_length = int(dl_raw)
+                if desired_length < 10:
+                    raise ValueError
+            except (ValueError, TypeError):
+                return _json_error(422, "desired_length must be an integer >= 10")
+
         cmd = [sys.executable, "-m", "shorts",
-               *stage_argv(stage, name, force=bool(body.get("force")), count=count)]
+               *stage_argv(stage, name, force=bool(body.get("force")), count=count, desired_length=desired_length, slugs=slugs)]
         try:
             _runner().start(stage, name, cmd)
         except JobBusy as exc:

@@ -1,9 +1,10 @@
+import os
 import textwrap
 from pathlib import Path
 
 import pytest
 
-from shorts.config import load_config, ConfigError
+from shorts.config import load_config, ConfigError, update_subtitle_config
 
 
 def _toml_path(p: Path) -> str:
@@ -27,7 +28,6 @@ def _write(root: Path, *, toml: str | None = None, env_key: str | None = "sk-tes
 
         [ideate]
         model = "gpt-4.1"
-        count = 6
 
         [voice]
         model = "omnivoice"
@@ -60,7 +60,7 @@ def test_loads_valid_config(tmp_path):
     assert cfg.projects_dir == (tmp_path / "projects").resolve()
     assert cfg.assets_dir == (tmp_path / "assets")
     assert cfg.aspect == "9:16"
-    assert cfg.ideate.count == 6
+    assert cfg.ideate.desired_video_length == 90
     assert cfg.voice.base_url == "http://localhost:3900"
     assert cfg.voice.model == "omnivoice"
     assert cfg.voice.voice == "39f10351"
@@ -205,16 +205,6 @@ def test_bad_aspect(tmp_path):
         load_config(tmp_path)
 
 
-def test_bad_count(tmp_path):
-    assets = tmp_path / "assets"
-    assets.mkdir()
-    (tmp_path / "config.toml").write_text(
-        f'projects_dir="projects"\nassets_dir="{_toml_path(assets)}"\n\n[ideate]\ncount=0\n')
-    _write_env(tmp_path)
-    with pytest.raises(ConfigError, match="ideate.count must be >= 1"):
-        load_config(tmp_path)
-
-
 def test_invalid_toml(tmp_path):
     assets = tmp_path / "assets"
     assets.mkdir()
@@ -309,30 +299,212 @@ def test_tiktok_bad_privacy_level(tmp_path):
         load_config(tmp_path)
 
 
-def test_env_ideate_count_overrides_config(tmp_path, monkeypatch):
-    _write(tmp_path)
-    monkeypatch.setenv("SHORTS_IDEATE_COUNT", "10")
+def test_update_subtitle_config_updates_and_preserves_comments(tmp_path):
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    initial_toml = textwrap.dedent(f"""\
+        # Top-level global configuration
+        projects_dir = "projects"
+        assets_dir = "{_toml_path(assets)}"
+        aspect = "9:16"
+
+        [render]
+        # Render section configuration
+        min_beat_duration = 3.0
+
+        [render.subtitle]
+        # Subtitle styling configuration
+        enabled = true
+        # Default font name
+        font = "Montserrat"
+        font_size = 18
+        primary_color = "#FFFFFF" # Hex primary color
+    """)
+    (tmp_path / "config.toml").write_text(initial_toml)
+    _write_env(tmp_path)
+
+    res = update_subtitle_config({
+        "font": "Impact",
+        "size": 24,
+        "primary_color": "#FFCC00",
+    }, root=tmp_path)
+
+    assert res.font == "Impact"
+    assert res.font_size == 24
+    assert res.primary_color == "#FFCC00"
+
     cfg = load_config(tmp_path)
-    assert cfg.ideate.count == 10
+    assert cfg.render.subtitle.font == "Impact"
+    assert cfg.render.subtitle.font_size == 24
+    assert cfg.render.subtitle.primary_color == "#FFCC00"
+
+    content = (tmp_path / "config.toml").read_text(encoding="utf-8")
+    assert "# Top-level global configuration" in content
+    assert "# Render section configuration" in content
+    assert "# Subtitle styling configuration" in content
+    assert "# Default font name" in content
+    assert "# Hex primary color" in content
 
 
-@pytest.mark.parametrize("bad_val", ["0", "-5", "abc", "1.5"])
-def test_env_ideate_count_invalid(tmp_path, monkeypatch, bad_val):
-    _write(tmp_path)
-    monkeypatch.setenv("SHORTS_IDEATE_COUNT", bad_val)
-    with pytest.raises(ConfigError, match="SHORTS_IDEATE_COUNT must be an integer >= 1"):
-        load_config(tmp_path)
+def test_update_subtitle_config_reverts_missing_and_null_keys(tmp_path):
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    initial_toml = textwrap.dedent(f"""\
+        # Global comment
+        projects_dir = "projects"
+        assets_dir = "{_toml_path(assets)}"
+        aspect = "9:16"
 
+        [render.subtitle]
+        # Subtitle defaults
+        enabled = true
+        font = "Montserrat"
+        font_size = 18
+        primary_color = "#FFFFFF"
+        bold = true
+        italic = true
+        uppercase = true
+        position = "top"
+        margin_vertical = 40
+        max_chars_per_line = 32
+        max_lines = 2
+        max_duration = 4.0
+    """)
+    (tmp_path / "config.toml").write_text(initial_toml)
+    _write_env(tmp_path)
 
-def test_env_ideate_count_unset(tmp_path):
-    _write(tmp_path)
+    # font is updated, primary_color is explicitly null, all other styling keys omitted
+    update_subtitle_config({
+        "font": "Open Sans",
+        "primary_color": None,
+    }, root=tmp_path)
+
     cfg = load_config(tmp_path)
-    assert cfg.ideate.count == 6
+    sub = cfg.render.subtitle
+    assert sub.font == "Open Sans"
+    assert sub.font_size is None
+    assert sub.primary_color is None
+    assert sub.bold is False
+    assert sub.italic is False
+    assert sub.uppercase is False
+    assert sub.position is None
+    assert sub.margin_vertical is None
+    assert sub.max_chars_per_line is None
+    assert sub.max_lines is None
+    assert sub.max_duration is None
+
+    content = (tmp_path / "config.toml").read_text(encoding="utf-8")
+    assert "# Global comment" in content
+    assert "# Subtitle defaults" in content
+    assert 'font = "Open Sans"' in content
+    assert "font_size" not in content
+    assert "primary_color" not in content
+    assert "bold" not in content
+    assert "italic" not in content
+    assert "uppercase" not in content
+    assert "position" not in content
+    assert "margin_vertical" not in content
+    assert "max_chars_per_line" not in content
+    assert "max_lines" not in content
+    assert "max_duration" not in content
 
 
-def test_env_ideate_count_empty_uses_toml(tmp_path, monkeypatch):
-    _write(tmp_path)
-    monkeypatch.setenv("SHORTS_IDEATE_COUNT", "")
+def test_update_subtitle_config_toggle_enabled(tmp_path):
+    _write_render_subtitle(tmp_path, "enabled = true\nfont = \"Arial\"\n")
+    update_subtitle_config({"enabled": False, "font": "Arial"}, root=tmp_path)
+    assert load_config(tmp_path).render.subtitle.enabled is False
+
+    update_subtitle_config({"enabled": True, "font": "Arial"}, root=tmp_path)
+    assert load_config(tmp_path).render.subtitle.enabled is True
+
+
+def test_update_subtitle_config_empty_strings_revert_keys(tmp_path):
+    _write_render_subtitle(tmp_path, "font = \"Arial\"\nfont_size = 20\n")
+    update_subtitle_config({"font": "", "font_size": ""}, root=tmp_path)
     cfg = load_config(tmp_path)
-    assert cfg.ideate.count == 6
+    assert cfg.render.subtitle.font is None
+    assert cfg.render.subtitle.font_size is None
+
+
+def test_update_subtitle_config_creates_tables_when_missing(tmp_path):
+    _write(tmp_path)  # does not have [render.subtitle]
+    update_subtitle_config({"font": "Courier New", "size": 16}, root=tmp_path)
+    cfg = load_config(tmp_path)
+    assert cfg.render.subtitle.font == "Courier New"
+    assert cfg.render.subtitle.font_size == 16
+
+
+def test_update_subtitle_config_direct_file_path(tmp_path):
+    cfg_file = tmp_path / "custom_config.toml"
+    cfg_file.write_text("# Preserved note\n[render.subtitle]\nfont = 'Montserrat'\n")
+    update_subtitle_config({"font": "Verdana"}, cfg_file)
+    content = cfg_file.read_text(encoding="utf-8")
+    assert 'font = "Verdana"' in content
+    assert "# Preserved note" in content
+
+
+def test_update_subtitle_config_validation_errors(tmp_path):
+    _write_render_subtitle(tmp_path, "enabled = true\n")
+
+    with pytest.raises(ConfigError, match="payload must be a dict"):
+        update_subtitle_config("not a dict", root=tmp_path)  # type: ignore
+
+    with pytest.raises(ConfigError, match="render.subtitle.position must be one of"):
+        update_subtitle_config({"position": "sideways"}, root=tmp_path)
+
+    with pytest.raises(ConfigError, match="render.subtitle.primary_color"):
+        update_subtitle_config({"color": "invalid_hex"}, root=tmp_path)
+
+    with pytest.raises(ConfigError, match="render.subtitle.font_size must be >= 1"):
+        update_subtitle_config({"size": 0}, root=tmp_path)
+
+    with pytest.raises(ConfigError, match="render.subtitle.margin_vertical must be >= 0"):
+        update_subtitle_config({"margin_vertical": -1}, root=tmp_path)
+
+    with pytest.raises(ConfigError, match="render.subtitle.max_chars_per_line must be >= 1"):
+        update_subtitle_config({"max_chars_per_line": 0}, root=tmp_path)
+
+    with pytest.raises(ConfigError, match="render.subtitle.max_lines must be >= 1"):
+        update_subtitle_config({"max_lines": 0}, root=tmp_path)
+
+    with pytest.raises(ConfigError, match="render.subtitle.max_duration must be > 0"):
+        update_subtitle_config({"max_duration": -1.0}, root=tmp_path)
+
+
+def test_update_subtitle_config_missing_file_raises(tmp_path):
+    with pytest.raises(ConfigError, match="config.toml not found"):
+        update_subtitle_config({"font": "Arial"}, root=tmp_path)
+
+
+def test_update_subtitle_config_atomic_write_failure_cleans_up(tmp_path, monkeypatch):
+    cfg_file = tmp_path / "config.toml"
+    initial_content = "[render.subtitle]\nfont = 'Montserrat'\n"
+    cfg_file.write_text(initial_content, encoding="utf-8")
+    _write_env(tmp_path)
+
+    def mock_replace(self, target):
+        raise OSError("Disk failure during replace")
+
+    monkeypatch.setattr(Path, "replace", mock_replace)
+
+    with pytest.raises(OSError, match="Disk failure during replace"):
+        update_subtitle_config({"font": "Impact"}, root=tmp_path)
+
+    assert cfg_file.read_text(encoding="utf-8") == initial_content
+    remaining_files = [p.name for p in tmp_path.iterdir() if p.name != ".env"]
+    assert remaining_files == ["config.toml"]
+
+
+def test_update_subtitle_config_preserves_file_permissions(tmp_path):
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text("[render.subtitle]\nfont = 'Montserrat'\n", encoding="utf-8")
+    _write_env(tmp_path)
+    os.chmod(cfg_file, 0o644)
+
+    update_subtitle_config({"font": "Impact"}, root=tmp_path)
+
+    assert os.stat(cfg_file).st_mode & 0o777 == 0o644
+
+
+
 

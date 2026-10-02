@@ -51,6 +51,7 @@ def run(project: Project, config: Config, *, force: bool = False) -> None:
                     "--assets", str(config.assets_dir),
                     "--out", str(project.render_file(slug)),
                     "--aspect", config.aspect,
+                    "--fit", config.render.video_fit_mode,
                 ],
                 cwd=project.renders_dir,
                 capture=False,

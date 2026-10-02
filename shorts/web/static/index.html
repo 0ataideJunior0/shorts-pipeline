@@ -59,9 +59,19 @@
     border:1px solid var(--line); border-radius:6px; padding:9px 10px;
     font:12.5px/1.5 var(--mono); resize:vertical;
   }
-  input[type=text], input:not([type]) {
+  input[type=text], input[type=number], select, input:not([type]) {
     background:var(--panel-2); color:var(--ink); border:1px solid var(--line);
     border-radius:6px; padding:7px 9px; font:14px var(--sans);
+  }
+  input[type=color] {
+    -webkit-appearance:none; border:1px solid var(--line); border-radius:6px;
+    background:var(--panel-2); width:36px; height:32px; padding:2px; cursor:pointer;
+  }
+  input[type=color]::-webkit-color-swatch-wrapper { padding:0; }
+  input[type=color]::-webkit-color-swatch { border:none; border-radius:4px; }
+  input[type=checkbox] {
+    accent-color:var(--sel);
+    cursor:pointer;
   }
   :focus-visible { outline:2px solid var(--sel); outline-offset:2px; border-radius:3px; }
 
@@ -86,9 +96,17 @@
   .err { color:var(--fail); }
 
   /* ---- top bar ---- */
-  .topbar { display:flex; align-items:baseline; justify-content:space-between; gap:1rem; }
+  .topbar { display:flex; align-items:center; justify-content:space-between; gap:1rem; }
+  .topbar-right { display:flex; align-items:center; gap:.75rem; }
   .wordmark { font:12px var(--mono); letter-spacing:.04em; color:var(--ink-dim); }
   .src { font-size:12.5px; }
+  .icon-btn {
+    background:transparent; border:1px solid transparent; border-radius:6px;
+    color:var(--ink-dim); cursor:pointer; display:inline-flex; align-items:center;
+    justify-content:center; padding:5px; line-height:1;
+    transition:color .15s ease, background .15s ease, border-color .15s ease;
+  }
+  .icon-btn:hover { color:var(--ink); background:var(--panel-2); border-color:var(--line); }
 
   /* ---- section heading with a rule that runs to the edge ---- */
   .head { display:flex; align-items:center; gap:.7rem; margin:1.4rem 0 .65rem; }
@@ -257,7 +275,8 @@
   @keyframes track { 0% { left:-32%; } 100% { left:100%; } }
 
   /* ---- idea card audio ---- */
-  .card audio { width:100%; height:34px; margin:.5rem 0 0; display:block; }
+  .card-audio-row { display:flex; align-items:center; gap:.5rem; margin:.5rem 0 0; }
+  .card-audio-row audio { flex:1; height:34px; }
 
   /* ---- assets panel ---- */
   .assets summary { font-size:13px; font-weight:600; cursor:pointer; }
@@ -290,6 +309,29 @@
   }
   #refine-modal::backdrop {
     background:rgba(0,0,0,0.6);
+  }
+
+  /* ---- subtitles modal ---- */
+  #subtitles-modal {
+    background:var(--panel); color:var(--ink);
+    border:1px solid var(--line); border-radius:8px;
+    padding:1.4rem; max-width:32rem; width:92%;
+    box-shadow:0 16px 36px -10px rgba(0,0,0,.6);
+  }
+  #subtitles-modal::backdrop {
+    background:rgba(0,0,0,0.6);
+  }
+  .sub-grid {
+    display:grid; grid-template-columns:1fr 1fr; gap:.8rem 1rem;
+  }
+  .sub-grid .sub-full { grid-column:1 / -1; }
+  .sub-grid input[type=text],
+  .sub-grid input[type=number],
+  .sub-grid select {
+    width:100%;
+  }
+  @media (max-width:560px) {
+    .sub-grid { grid-template-columns:1fr; }
   }
 
   /* ---- broadcast publish & schedule deck ---- */
@@ -547,11 +589,96 @@
   </div>
 </dialog>
 
+<dialog id="subtitles-modal">
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:.4rem">
+    <h3 style="margin:0">Subtitle Settings</h3>
+    <button type="button" class="icon-btn" id="sub-close-btn" title="Close" aria-label="Close" style="font-size:16px; margin:-4px -4px 0 0">✕</button>
+  </div>
+  <p class="muted" style="font-size:12px; margin:0 0 1rem">Configure subtitle styling for video rendering. Empty fields use engine defaults.</p>
+
+  <div id="sub-loading" class="muted" style="padding:2rem 0; text-align:center">Loading subtitle settings…</div>
+  <div id="sub-error" class="err" style="margin-bottom:.8rem; font-size:13px" hidden></div>
+
+  <form id="subtitles-form" hidden>
+    <div style="margin-bottom:1rem">
+      <label style="display:inline-flex; align-items:center; gap:.5rem; cursor:pointer; font-weight:600">
+        <input type="checkbox" id="sub-enabled" name="enabled">
+        Enable subtitles
+      </label>
+    </div>
+
+    <div class="sub-grid">
+      <div>
+        <label class="field-lbl" for="sub-font">Font family</label>
+        <input type="text" id="sub-font" name="font" placeholder="Engine default">
+      </div>
+      <div>
+        <label class="field-lbl" for="sub-font-size">Font size (pt)</label>
+        <input type="number" id="sub-font-size" name="font_size" min="1" step="1" placeholder="Engine default">
+      </div>
+
+      <div>
+        <label class="field-lbl" for="sub-primary-color">Primary color</label>
+        <div style="display:flex; align-items:center; gap:.5rem; height:34px">
+          <input type="color" id="sub-primary-color" name="primary_color" value="#ffffff">
+          <button type="button" class="btn" id="sub-clear-color" style="padding:4px 8px; font-size:12px">Clear</button>
+          <span id="sub-color-display" class="muted" style="font-size:12px; font-family:var(--mono)">Engine default</span>
+        </div>
+      </div>
+      <div>
+        <label class="field-lbl">Text style</label>
+        <div style="display:flex; gap:.8rem; align-items:center; height:34px">
+          <label style="cursor:pointer; display:inline-flex; align-items:center; gap:.3rem; font-size:13px"><input type="checkbox" id="sub-bold" name="bold"> Bold</label>
+          <label style="cursor:pointer; display:inline-flex; align-items:center; gap:.3rem; font-size:13px"><input type="checkbox" id="sub-italic" name="italic"> Italic</label>
+          <label style="cursor:pointer; display:inline-flex; align-items:center; gap:.3rem; font-size:13px"><input type="checkbox" id="sub-uppercase" name="uppercase"> Uppercase</label>
+        </div>
+      </div>
+
+      <div>
+        <label class="field-lbl" for="sub-position">Position</label>
+        <select id="sub-position" name="position">
+          <option value="">Engine default</option>
+          <option value="bottom">Bottom</option>
+          <option value="middle">Middle</option>
+          <option value="top">Top</option>
+        </select>
+      </div>
+      <div>
+        <label class="field-lbl" for="sub-margin-vertical">Vertical margin (px)</label>
+        <input type="number" id="sub-margin-vertical" name="margin_vertical" min="0" step="1" placeholder="Engine default">
+      </div>
+
+      <div>
+        <label class="field-lbl" for="sub-max-chars-per-line">Max chars per line</label>
+        <input type="number" id="sub-max-chars-per-line" name="max_chars_per_line" min="1" step="1" placeholder="Engine default">
+      </div>
+      <div>
+        <label class="field-lbl" for="sub-max-lines">Max lines</label>
+        <input type="number" id="sub-max-lines" name="max_lines" min="1" step="1" placeholder="Engine default">
+      </div>
+
+      <div class="sub-full">
+        <label class="field-lbl" for="sub-max-duration">Max duration (seconds)</label>
+        <input type="number" id="sub-max-duration" name="max_duration" min="0.1" step="any" placeholder="Engine default (e.g. 4.0)">
+      </div>
+    </div>
+
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:1.2rem; padding-top:.8rem; border-top:1px solid var(--line)">
+      <button type="button" class="btn" id="sub-reset-btn" title="Revert all fields to engine defaults">Clear to Defaults</button>
+      <div style="display:flex; gap:.5rem">
+        <button type="button" class="btn" id="sub-cancel-btn">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="sub-save-btn">Save Settings</button>
+      </div>
+    </div>
+  </form>
+</dialog>
+
 <div id="toasts"></div>
 
 <script>
 const $ = (sel, el = document) => el.querySelector(sel);
 const STAGES = ["fetch", "transcribe", "ideate", "voice", "plan", "render"];
+const SETTINGS_GEAR_BTN = `<button type="button" class="icon-btn settings-btn" id="open-settings-btn" title="Subtitle Settings" aria-label="Subtitle Settings"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>`;
 
 const api = async (method, path, body) => {
   const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
@@ -630,7 +757,10 @@ async function loadList() {
   }).join("") || `<p class="muted">No projects yet. Create one above.</p>`;
 
   $("#app").innerHTML = `
-    <div class="topbar"><span class="wordmark">shorts pipeline</span></div>
+    <div class="topbar">
+      <span class="wordmark">shorts pipeline</span>
+      ${SETTINGS_GEAR_BTN}
+    </div>
     <h1>Projects</h1>
     <form class="newproj" id="new">
       <div class="newproj-tabs">
@@ -718,7 +848,11 @@ async function loadProject(name) {
     if (creating.has(name) && /no such project/i.test(err.message)) {
       $("#app").innerHTML = `
         <div class="topbar"><a href="#/">‹ Projects</a>
-          <span class="wordmark">shorts / ${escapeHtml(name)}</span></div>
+          <div class="topbar-right">
+            <span class="wordmark">shorts / ${escapeHtml(name)}</span>
+            ${SETTINGS_GEAR_BTN}
+          </div>
+        </div>
         <h1>${escapeHtml(name)}</h1>
         <div class="deck running"><span class="d-stage">fetch</span>
           <span class="d-status">downloading the source video…</span></div>`;
@@ -726,7 +860,7 @@ async function loadProject(name) {
       return;
     }
     $("#app").innerHTML =
-      `<p class="err">${escapeHtml(err.message)}</p><p><a href="#/">‹ Projects</a></p>`;
+      `<div class="topbar"><a href="#/">‹ Projects</a>${SETTINGS_GEAR_BTN}</div><p class="err">${escapeHtml(err.message)}</p><p><a href="#/">‹ Projects</a></p>`;
     return;
   }
   creating.delete(name);
@@ -756,7 +890,10 @@ function render() {
   $("#app").innerHTML = `
     <div class="topbar">
       <a href="#/">‹ Projects</a>
-      <span class="wordmark">shorts / ${escapeHtml(s.name)}</span>
+      <div class="topbar-right">
+        <span class="wordmark">shorts / ${escapeHtml(s.name)}</span>
+        ${SETTINGS_GEAR_BTN}
+      </div>
     </div>
     <h1>${escapeHtml(s.source.title || s.name)}</h1>
     <p class="muted" style="margin:.1rem 0 0">${escapeHtml(s.name)}${srcLink}</p>
@@ -769,6 +906,17 @@ function render() {
     <textarea id="prompt" rows="5">${escapeHtml(s.prompt)}</textarea>
     <button class="btn" id="save-prompt">Save brief</button>
     <span class="brief-help">Ideate reads this the next time it runs.</span>
+
+    <div class="head"><b>Settings</b><span class="fill"></span></div>
+    <div style="display:flex; align-items:center; gap:.5rem; margin-bottom: .5rem;">
+      <label style="font-size:13px; color:var(--ink); width: 8rem;">Target shorts count</label>
+      <input type="number" id="setting-count" value="${s.settings && s.settings.count != null ? escapeHtml(s.settings.count) : ''}" placeholder="5" min="1" step="1" style="width:4.5rem; padding:4px 6px;">
+    </div>
+    <div style="display:flex; align-items:center; gap:.5rem;">
+      <label style="font-size:13px; color:var(--ink); width: 8rem;">Desired length (s)</label>
+      <input type="number" id="setting-length" value="${s.settings && s.settings.desired_length != null ? escapeHtml(s.settings.desired_length) : ''}" placeholder="${s.default_desired_length}" min="10" step="1" style="width:4.5rem; padding:4px 6px;">
+      <button class="btn" id="save-settings" style="margin-left:auto;">Save Settings</button>
+    </div>
 
     <div class="head"><b>Ideas</b><span class="fill"></span></div>
     ${s.ideas.map(ideaCard).join("") ||
@@ -828,7 +976,10 @@ function deck(s, armedRow, runningHere) {
       ? (st.detail || "Up to date. Run with force to rebuild it.")
       : (st.detail || "");
     const countInput = st.stage === "ideate"
-      ? `<label style="display:inline-flex; align-items:center; gap:.3rem; font-size:12px; color:var(--ink-dim);">count <input type="number" id="armcount" min="1" step="1" style="width:3.5rem; padding:2px 4px; font:12px var(--mono);" value="${escapeHtml(state.settings && state.settings.count != null ? state.settings.count : "")}" placeholder="def"></label>`
+      ? `<label style="display:inline-flex; align-items:center; gap:.3rem; font-size:12px; color:var(--ink-dim);">count <input type="number" id="armcount" min="1" step="1" style="width:3.5rem; padding:2px 4px; font:12px var(--mono);" value="${escapeHtml(s.settings && s.settings.count != null ? s.settings.count : "")}" placeholder="def"></label>`
+      : "";
+    const desiredLengthInput = st.stage === "ideate"
+      ? `<label style="display:inline-flex; align-items:center; gap:.3rem; font-size:12px; color:var(--ink-dim);">length (s) <input type="number" id="armdesiredlength" min="10" step="1" style="width:3.5rem; padding:2px 4px; font:12px var(--mono);" value="${escapeHtml(state.default_desired_length != null ? state.default_desired_length : "")}" placeholder="90"></label>`
       : "";
     return `<div class="deck armed" aria-live="polite">
       <span class="d-stage">${st.stage}</span>
@@ -836,6 +987,7 @@ function deck(s, armedRow, runningHere) {
       <span class="d-detail">${escapeHtml(detail)}</span>
       <span class="spacer"></span>
       ${countInput}
+      ${desiredLengthInput}
       <label><input type="checkbox" id="armforce"> force</label>
       <button class="btn btn-run" id="armrun">Run ${st.stage}</button>
     </div>`;
@@ -865,7 +1017,10 @@ function ideaCard(idea) {
     : "";
 
   const audio = idea.voice !== "missing"
-    ? `<audio controls preload="none" src="/api/projects/${encodeURIComponent(state.name)}/voice/${encodeURIComponent(idea.slug)}?h=${encodeURIComponent(idea.voice_hash || "")}"></audio>`
+    ? `<div class="card-audio-row">
+         <audio controls preload="none" src="/api/projects/${encodeURIComponent(state.name)}/voice/${encodeURIComponent(idea.slug)}?h=${encodeURIComponent(idea.voice_hash || "")}"></audio>
+         <button type="button" class="btn run-voice-btn" title="Force regenerate audio">↻</button>
+       </div>`
     : "";
 
   return `<div class="card" data-slug="${escapeHtml(idea.slug)}">
@@ -888,7 +1043,7 @@ function ideaCard(idea) {
 }
 
 /* ---------- run controls ---------- */
-async function runStage(stage, force, count) {
+async function runStage(stage, force, count, desired_length, slugs) {
   if (pending || jobHereRunning()) return;
   pending = true;
   startedAt = Date.now();
@@ -896,8 +1051,12 @@ async function runStage(stage, force, count) {
   render();
   try {
     const payload = { force };
-    if (stage === "ideate" && count != null && !isNaN(count)) {
-      payload.count = count;
+    if (stage === "ideate") {
+      if (count != null && !isNaN(count)) payload.count = count;
+      if (desired_length != null && !isNaN(desired_length)) payload.desired_length = desired_length;
+    }
+    if (slugs && slugs.length > 0) {
+      payload.slugs = slugs;
     }
     await api("POST", `/api/projects/${encodeURIComponent(state.name)}/run/${stage}`, payload);
   } catch (err) {
@@ -917,7 +1076,9 @@ function wire() {
     const force = $("#armforce") ? $("#armforce").checked : false;
     const countInput = $("#armcount");
     const countVal = countInput && countInput.value.trim() ? parseInt(countInput.value.trim(), 10) : undefined;
-    runStage(armed, force, countVal);
+    const dlInput = $("#armdesiredlength");
+    const dlVal = dlInput && dlInput.value.trim() ? parseInt(dlInput.value.trim(), 10) : undefined;
+    runStage(armed, force, countVal, dlVal);
   };
   const stop = $("#stop");
   if (stop) stop.onclick = () => {
@@ -933,6 +1094,46 @@ function wire() {
       toast("Brief saved");
     } catch (err) { toast(err.message, "err"); }
   };
+
+  const saveSettings = $("#save-settings");
+  if (saveSettings) {
+    saveSettings.onclick = async () => {
+      const countInput = $("#setting-count");
+      const lenInput = $("#setting-length");
+      if (!countInput || !lenInput) return;
+      const payload = {};
+      
+      const countStr = countInput.value.trim();
+      if (!countStr) {
+        payload.count = null;
+      } else {
+        const countVal = parseInt(countStr, 10);
+        if (isNaN(countVal) || countVal < 1) {
+          toast("Target count must be >= 1", "err");
+          return;
+        }
+        payload.count = countVal;
+      }
+      
+      const lenStr = lenInput.value.trim();
+      if (!lenStr) {
+        payload.desired_length = null;
+      } else {
+        const lenVal = parseInt(lenStr, 10);
+        if (isNaN(lenVal) || lenVal < 10) {
+          toast("Desired length must be >= 10", "err");
+          return;
+        }
+        payload.desired_length = lenVal;
+      }
+
+      try {
+        state = await api("PUT", `/api/projects/${encodeURIComponent(state.name)}/settings`, payload);
+        render();
+        toast("Settings saved");
+      } catch (err) { toast(err.message, "err"); }
+    };
+  }
 
   const cats = $(".assets");
   if (cats) cats.ontoggle = () => {
@@ -987,6 +1188,10 @@ function wire() {
         render();
         toast("Plan saved");
       } catch (err) { $(".plan-err", card).textContent = err.message; }
+    };
+    const rv = $(".run-voice-btn", card);
+    if (rv) rv.onclick = () => {
+      runStage("voice", true, null, undefined, [slug]);
     };
   });
 }
@@ -1903,7 +2108,265 @@ function wireRefineModal() {
   }
 }
 
+/* ---------- subtitle settings modal ---------- */
+function populateSubtitleForm(cfg) {
+  const enabledEl = $("#sub-enabled");
+  if (enabledEl) enabledEl.checked = cfg.enabled !== false;
+
+  const fontEl = $("#sub-font");
+  if (fontEl) fontEl.value = cfg.font || "";
+
+  const fontSizeEl = $("#sub-font-size");
+  if (fontSizeEl) fontSizeEl.value = cfg.font_size != null ? cfg.font_size : "";
+
+  const colorInput = $("#sub-primary-color");
+  const colorDisplay = $("#sub-color-display");
+  if (colorInput && colorDisplay) {
+    if (cfg.primary_color) {
+      colorInput.value = cfg.primary_color;
+      delete colorInput.dataset.default;
+      colorDisplay.textContent = cfg.primary_color.toUpperCase();
+    } else {
+      colorInput.value = "#ffffff";
+      colorInput.dataset.default = "true";
+      colorDisplay.textContent = "Engine default";
+    }
+  }
+
+  const boldEl = $("#sub-bold");
+  if (boldEl) boldEl.checked = Boolean(cfg.bold);
+
+  const italicEl = $("#sub-italic");
+  if (italicEl) italicEl.checked = Boolean(cfg.italic);
+
+  const uppercaseEl = $("#sub-uppercase");
+  if (uppercaseEl) uppercaseEl.checked = Boolean(cfg.uppercase);
+
+  const posEl = $("#sub-position");
+  if (posEl) posEl.value = cfg.position || "";
+
+  const marginEl = $("#sub-margin-vertical");
+  if (marginEl) marginEl.value = cfg.margin_vertical != null ? cfg.margin_vertical : "";
+
+  const maxCharsEl = $("#sub-max-chars-per-line");
+  if (maxCharsEl) maxCharsEl.value = cfg.max_chars_per_line != null ? cfg.max_chars_per_line : "";
+
+  const maxLinesEl = $("#sub-max-lines");
+  if (maxLinesEl) maxLinesEl.value = cfg.max_lines != null ? cfg.max_lines : "";
+
+  const maxDurEl = $("#sub-max-duration");
+  if (maxDurEl) maxDurEl.value = cfg.max_duration != null ? cfg.max_duration : "";
+}
+
+function resetSubtitleFormDefaults() {
+  const enabledEl = $("#sub-enabled");
+  if (enabledEl) enabledEl.checked = true;
+
+  const fontEl = $("#sub-font");
+  if (fontEl) fontEl.value = "";
+
+  const fontSizeEl = $("#sub-font-size");
+  if (fontSizeEl) fontSizeEl.value = "";
+
+  const colorInput = $("#sub-primary-color");
+  const colorDisplay = $("#sub-color-display");
+  if (colorInput && colorDisplay) {
+    colorInput.value = "#ffffff";
+    colorInput.dataset.default = "true";
+    colorDisplay.textContent = "Engine default";
+  }
+
+  const boldEl = $("#sub-bold");
+  if (boldEl) boldEl.checked = false;
+
+  const italicEl = $("#sub-italic");
+  if (italicEl) italicEl.checked = false;
+
+  const uppercaseEl = $("#sub-uppercase");
+  if (uppercaseEl) uppercaseEl.checked = false;
+
+  const posEl = $("#sub-position");
+  if (posEl) posEl.value = "";
+
+  const marginEl = $("#sub-margin-vertical");
+  if (marginEl) marginEl.value = "";
+
+  const maxCharsEl = $("#sub-max-chars-per-line");
+  if (maxCharsEl) maxCharsEl.value = "";
+
+  const maxLinesEl = $("#sub-max-lines");
+  if (maxLinesEl) maxLinesEl.value = "";
+
+  const maxDurEl = $("#sub-max-duration");
+  if (maxDurEl) maxDurEl.value = "";
+}
+
+function getSubtitleFormData() {
+  const colorInput = $("#sub-primary-color");
+  const isColorDefault = !colorInput || colorInput.dataset.default === "true";
+
+  const fontVal = $("#sub-font") ? $("#sub-font").value.trim() : "";
+  const fontSizeVal = $("#sub-font-size") ? $("#sub-font-size").value.trim() : "";
+  const marginVal = $("#sub-margin-vertical") ? $("#sub-margin-vertical").value.trim() : "";
+  const maxCharsVal = $("#sub-max-chars-per-line") ? $("#sub-max-chars-per-line").value.trim() : "";
+  const maxLinesVal = $("#sub-max-lines") ? $("#sub-max-lines").value.trim() : "";
+  const maxDurVal = $("#sub-max-duration") ? $("#sub-max-duration").value.trim() : "";
+  const posVal = $("#sub-position") ? $("#sub-position").value.trim() : "";
+
+  return {
+    enabled: $("#sub-enabled") ? $("#sub-enabled").checked : true,
+    font: fontVal ? fontVal : null,
+    font_size: fontSizeVal ? parseInt(fontSizeVal, 10) : null,
+    primary_color: isColorDefault ? null : colorInput.value,
+    bold: $("#sub-bold") ? $("#sub-bold").checked : false,
+    italic: $("#sub-italic") ? $("#sub-italic").checked : false,
+    uppercase: $("#sub-uppercase") ? $("#sub-uppercase").checked : false,
+    position: posVal ? posVal : null,
+    margin_vertical: marginVal ? parseInt(marginVal, 10) : null,
+    max_chars_per_line: maxCharsVal ? parseInt(maxCharsVal, 10) : null,
+    max_lines: maxLinesVal ? parseInt(maxLinesVal, 10) : null,
+    max_duration: maxDurVal ? parseFloat(maxDurVal) : null,
+  };
+}
+
+async function openSubtitlesModal() {
+  const modal = $("#subtitles-modal");
+  const form = $("#subtitles-form");
+  const loading = $("#sub-loading");
+  const errBox = $("#sub-error");
+  const saveBtn = $("#sub-save-btn");
+  const cancelBtn = $("#sub-cancel-btn");
+
+  if (!modal) return;
+
+  if (errBox) {
+    errBox.textContent = "";
+    errBox.hidden = true;
+  }
+  if (loading) loading.hidden = false;
+  if (form) form.hidden = true;
+  if (saveBtn) {
+    saveBtn.disabled = false;
+    saveBtn.textContent = "Save Settings";
+  }
+  if (cancelBtn) cancelBtn.disabled = false;
+
+  if (modal.showModal && !modal.open) {
+    modal.showModal();
+  }
+
+  try {
+    const cfg = await api("GET", "/api/config/subtitles");
+    populateSubtitleForm(cfg);
+    if (loading) loading.hidden = true;
+    if (form) form.hidden = false;
+  } catch (err) {
+    if (loading) loading.hidden = true;
+    if (errBox) {
+      errBox.textContent = "Failed to load subtitle settings: " + err.message;
+      errBox.hidden = false;
+    }
+    toast(err.message, "err");
+  }
+}
+
+function wireSubtitlesModal() {
+  const modal = $("#subtitles-modal");
+  const form = $("#subtitles-form");
+  const cancelBtn = $("#sub-cancel-btn");
+  const closeBtn = $("#sub-close-btn");
+  const resetBtn = $("#sub-reset-btn");
+  const clearColorBtn = $("#sub-clear-color");
+  const colorInput = $("#sub-primary-color");
+  const colorDisplay = $("#sub-color-display");
+  const errBox = $("#sub-error");
+  const saveBtn = $("#sub-save-btn");
+
+  if (cancelBtn) {
+    cancelBtn.onclick = () => {
+      if (modal && modal.close) modal.close();
+    };
+  }
+
+  if (closeBtn) {
+    closeBtn.onclick = () => {
+      if (modal && modal.close) modal.close();
+    };
+  }
+
+  if (modal) {
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal && modal.close) modal.close();
+    });
+  }
+
+  if (clearColorBtn && colorInput && colorDisplay) {
+    clearColorBtn.onclick = () => {
+      colorInput.dataset.default = "true";
+      colorDisplay.textContent = "Engine default";
+    };
+  }
+
+  if (colorInput && colorDisplay) {
+    const onColorChange = () => {
+      delete colorInput.dataset.default;
+      colorDisplay.textContent = colorInput.value.toUpperCase();
+    };
+    colorInput.addEventListener("input", onColorChange);
+    colorInput.addEventListener("change", onColorChange);
+  }
+
+  if (resetBtn) {
+    resetBtn.onclick = () => {
+      resetSubtitleFormDefaults();
+    };
+  }
+
+  if (form) {
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      if (errBox) {
+        errBox.textContent = "";
+        errBox.hidden = true;
+      }
+      if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = "Saving…";
+      }
+      if (cancelBtn) cancelBtn.disabled = true;
+
+      try {
+        const payload = getSubtitleFormData();
+        await api("PUT", "/api/config/subtitles", payload);
+        toast("Subtitle settings saved");
+        if (modal && modal.close) modal.close();
+      } catch (err) {
+        if (errBox) {
+          errBox.textContent = err.message;
+          errBox.hidden = false;
+        }
+        toast(err.message, "err");
+      } finally {
+        if (saveBtn) {
+          saveBtn.disabled = false;
+          saveBtn.textContent = "Save Settings";
+        }
+        if (cancelBtn) cancelBtn.disabled = false;
+      }
+    };
+  }
+
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest("#open-settings-btn, .settings-btn");
+    if (btn) {
+      e.preventDefault();
+      openSubtitlesModal();
+    }
+  });
+}
+
 wireRefineModal();
+wireSubtitlesModal();
 window.addEventListener("hashchange", route);
 route();
 </script>

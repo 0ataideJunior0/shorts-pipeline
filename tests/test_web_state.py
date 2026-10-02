@@ -21,13 +21,14 @@ def _config(tmp_path):
         assets_dir=tmp_path / "assets",
         aspect="9:16",
         transcribe=TranscribeCfg(model="whisper-1"),
-        ideate=IdeateCfg(model="gpt-4.1", count=6),
+        ideate=IdeateCfg(model="gpt-4.1", desired_video_length=90),
         voice=VoiceCfg(
             base_url="http://localhost:3900", model="m", voice="v",
             language=None, speed=1.0, instruct=None,
         ),
         render=RenderCfg(
             min_beat_duration=3.0,
+            video_fit_mode="cover",
             subtitle=SubtitleCfg(
                 enabled=True, font=None, font_size=None, primary_color=None,
                 bold=False, italic=False, uppercase=False, position=None,
